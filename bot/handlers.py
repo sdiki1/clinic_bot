@@ -9,7 +9,15 @@ from aiogram.types import FSInputFile, Message, ReplyKeyboardRemove
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.config import Settings
-from bot.constants import SOURCE_UNKNOWN
+from bot.constants import (
+    PREMIUM_EMOJI_BOOKS_ID,
+    PREMIUM_EMOJI_GREETING_ID,
+    PREMIUM_EMOJI_GIFT_ID,
+    PREMIUM_EMOJI_TOOTH_ID,
+    PREMIUM_EMOJI_WORLD_ID,
+    SOURCE_UNKNOWN,
+    premium_emoji_html,
+)
 from bot.keyboards import actions_inline_keyboard, phone_request_keyboard
 from bot.phone_utils import hash_phone, mask_phone, normalize_phone
 from bot.repository import create_lead, get_user_by_telegram_id, set_user_phone, upsert_user
@@ -24,6 +32,12 @@ from bot.services import (
 router = Router(name=__name__)
 logger = logging.getLogger(__name__)
 
+EMOJI_GREETING = premium_emoji_html(PREMIUM_EMOJI_GREETING_ID, "👋")
+EMOJI_BOOKS = premium_emoji_html(PREMIUM_EMOJI_BOOKS_ID, "📚")
+EMOJI_WORLD = premium_emoji_html(PREMIUM_EMOJI_WORLD_ID, "🌐")
+EMOJI_GIFT = premium_emoji_html(PREMIUM_EMOJI_GIFT_ID, "🎁")
+EMOJI_TOOTH = premium_emoji_html(PREMIUM_EMOJI_TOOTH_ID, "🦷")
+
 
 async def send_links_menu(message: Message, settings: Settings) -> None:
     if message.from_user is None:
@@ -32,8 +46,9 @@ async def send_links_menu(message: Message, settings: Settings) -> None:
     loyalty_url = build_loyalty_url(settings, message.from_user.id)
     keyboard = actions_inline_keyboard(settings.clinic_site_url, loyalty_url)
     await message.answer(
-        "🦷 С возвращением!\n"
-        "Можете перейти на сайт клиники или в бонусную систему.\n"
+        f"{EMOJI_TOOTH} С возвращением!\n"
+        f"{EMOJI_WORLD} Можете перейти на сайт клиники или в бонусную систему.\n"
+        f"{EMOJI_GIFT} Бонусный счет доступен в один клик.\n"
         "Если хотите снова получить гайд, используйте команду /guide.",
         reply_markup=keyboard,
     )
@@ -51,7 +66,7 @@ async def send_guide(message: Message, settings: Settings, source: str) -> None:
 
     if guide_path is None:
         await message.answer(
-            "📚 Спасибо за заявку!\n"
+            f"{EMOJI_BOOKS} Спасибо за заявку!\n"
             "Сейчас гайд временно недоступен, но вы уже можете перейти на сайт или в бонусную систему.",
             reply_markup=keyboard,
         )
@@ -60,7 +75,7 @@ async def send_guide(message: Message, settings: Settings, source: str) -> None:
     await message.answer_document(
         document=FSInputFile(guide_path),
         caption=(
-            f"📚 {title}\n"
+            f"{EMOJI_BOOKS} {title}\n"
             "Спасибо за заявку! Держите ваш гайд и полезные ссылки ниже."
         ),
         reply_markup=keyboard,
@@ -163,13 +178,13 @@ async def on_start(
     await session.commit()
 
     if user.phone_hash:
-        await message.answer("👋 Вы уже зарегистрированы.", reply_markup=ReplyKeyboardRemove())
+        await message.answer(f"{EMOJI_GREETING} Вы уже зарегистрированы.", reply_markup=ReplyKeyboardRemove())
         await send_links_menu(message, settings)
         return
 
     await message.answer(
-        "👋 Привет! Я бот клиники MARULIDI.\n"
-        "📚 Чтобы получить полезный PDF-гайд, поделитесь номером телефона.",
+        f"{EMOJI_GREETING} Привет! Я бот клиники MARULIDI.\n"
+        f"{EMOJI_BOOKS} Чтобы получить полезный PDF-гайд, поделитесь номером телефона.",
         reply_markup=phone_request_keyboard(),
     )
 
