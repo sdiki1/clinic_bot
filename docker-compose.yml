@@ -47,10 +47,10 @@ services:
       db:
         condition: service_healthy
     ports:
-      - "${ADMIN_PANEL_PORT:-8080}:8080"
+      - "${ADMIN_PANEL_PORT:-8080}:8912"
     volumes:
       - ./guides:/app/guides
-    command: ["uvicorn", "bot.admin_app:app", "--host", "0.0.0.0", "--port", "8080"]
+    command: ["uvicorn", "bot.admin_app:app", "--host", "0.0.0.0", "--port", "8912"]
 
 volumes:
   pg_data:
