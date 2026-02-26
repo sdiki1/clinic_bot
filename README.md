@@ -1,0 +1,88 @@
+# Telegram-бот "Стоматология Гид MARULIDI"
+
+Бот автоматически собирает лиды из Telegram, определяет источник трафика по deep-link, запрашивает телефон, выдает PDF-гайд и отправляет уведомление менеджеру.
+
+## Что реализовано
+
+- `/start` + deep-link сегментация: `instagram`, `youtube`, `site`
+- Сохранение пользователей в БД (`users`) и заявок (`leads`)
+- Запрос телефона через кнопку `📞 Поделиться номером` и ручной ввод
+- Валидация телефона (минимум 10 цифр)
+- Хранение телефона в безопасном виде: `phone_hash` + `phone_masked`
+- Выдача PDF-гайда в зависимости от источника
+- Inline-кнопки: `🌐 Перейти на сайт` и `🎁 Мой бонусный счет`
+- Переход в бот лояльности с передачей `start=user_<telegram_id>`
+- Мгновенное уведомление менеджера о новом лиде
+- Повторный заход без повторного запроса номера
+
+## Стек
+
+- Python 3.11+
+- aiogram 3
+- SQLAlchemy 2
+- PostgreSQL (основная БД)
+
+## Запуск через Docker Compose
+
+1. Создайте `.env`:
+
+```bash
+cp .env.example .env
+```
+
+2. Заполните обязательные переменные:
+
+- `BOT_TOKEN`
+- `MANAGER_CHAT_ID`
+- `CLINIC_SITE_URL`
+- `LOYALTY_BOT_USERNAME`
+- `PHONE_HASH_SALT`
+
+3. Положите PDF-файлы в папку `guides/`:
+
+- `guides/instagram-guide.pdf`
+- `guides/youtube-guide.pdf`
+- `guides/universal-guide.pdf`
+
+4. Запустите сервисы:
+
+```bash
+docker compose up -d --build
+```
+
+5. Проверьте логи бота:
+
+```bash
+docker compose logs -f bot
+```
+
+PostgreSQL поднимается на порту `5123`.
+
+## Параметры PostgreSQL
+
+- `POSTGRES_DB=marulidi_bot`
+- `POSTGRES_USER=marulidi`
+- `POSTGRES_PASSWORD=marulidi_password`
+- `POSTGRES_PORT=5123`
+- `DATABASE_URL=postgresql+asyncpg://marulidi:marulidi_password@db:5123/marulidi_bot`
+
+Если запускаете бота не в контейнере, замените хост `db` на `localhost`.
+
+## Локальный запуск без Docker
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -U pip
+pip install -e '.[dev]'
+python -m bot
+```
+
+Для локального запуска с PostgreSQL используйте `DATABASE_URL` вида:
+`postgresql+asyncpg://<user>:<password>@localhost:5123/<db_name>`.
+
+## Ссылки для таргетолога
+
+- Instagram: `https://t.me/<ИмяБота>?start=instagram`
+- YouTube: `https://t.me/<ИмяБота>?start=youtube`
+- Универсальная: `https://t.me/<ИмяБота>?start=site`
