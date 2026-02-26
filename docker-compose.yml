@@ -34,5 +34,23 @@ services:
       - ./guides:/app/guides:ro
     command: ["python", "-m", "bot"]
 
+  admin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-marulidi}:${POSTGRES_PASSWORD:-marulidi_password}@db:${POSTGRES_PORT:-5123}/${POSTGRES_DB:-marulidi_bot}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${ADMIN_PANEL_PORT:-8080}:8080"
+    volumes:
+      - ./guides:/app/guides
+    command: ["uvicorn", "bot.admin_app:app", "--host", "0.0.0.0", "--port", "8080"]
+
 volumes:
   pg_data:

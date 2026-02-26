@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Вход | MARULIDI Admin</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body class="login-page">
+  <main class="login-wrap">
+    <section class="panel">
+      <h1>Вход в админ-панель</h1>
+      {% if err %}
+      <div class="alert alert-error">{{ err }}</div>
+      {% endif %}
+      <form method="post" action="/login" class="form-stack">
+        <label>
+          Логин
+          <input type="text" name="username" required autofocus>
+        </label>
+        <label>
+          Пароль
+          <input type="password" name="password" required>
+        </label>
+        <button class="btn" type="submit">Войти</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

@@ -14,6 +14,7 @@
 - Переход в бот лояльности с передачей `start=user_<telegram_id>`
 - Мгновенное уведомление менеджера о новом лиде
 - Повторный заход без повторного запроса номера
+- Веб-админка: дашборд, лиды, пользователи, загрузка PDF-гайдов
 
 ## Стек
 
@@ -37,6 +38,9 @@ cp .env.example .env
 - `CLINIC_SITE_URL`
 - `LOYALTY_BOT_USERNAME`
 - `PHONE_HASH_SALT`
+- `ADMIN_USERNAME`
+- `ADMIN_PASSWORD`
+- `ADMIN_SECRET_KEY`
 
 3. Положите PDF-файлы в папку `guides/`:
 
@@ -56,7 +60,16 @@ docker compose up -d --build
 docker compose logs -f bot
 ```
 
+Логи админ-панели:
+
+```bash
+docker compose logs -f admin
+```
+
 PostgreSQL поднимается на порту `5123`.
+
+Админ-панель доступна по адресу:
+`http://localhost:8080` (или порт из `ADMIN_PANEL_PORT`).
 
 ## Параметры PostgreSQL
 
@@ -65,6 +78,7 @@ PostgreSQL поднимается на порту `5123`.
 - `POSTGRES_PASSWORD=marulidi_password`
 - `POSTGRES_PORT=5123`
 - `DATABASE_URL=postgresql+asyncpg://marulidi:marulidi_password@db:5123/marulidi_bot`
+- `ADMIN_PANEL_PORT=8080`
 
 Если запускаете бота не в контейнере, замените хост `db` на `localhost`.
 
@@ -80,6 +94,12 @@ python -m bot
 
 Для локального запуска с PostgreSQL используйте `DATABASE_URL` вида:
 `postgresql+asyncpg://<user>:<password>@localhost:5123/<db_name>`.
+
+Локальный запуск админ-панели:
+
+```bash
+uvicorn bot.admin_app:app --host 0.0.0.0 --port 8080 --reload
+```
 
 ## Ссылки для таргетолога
 

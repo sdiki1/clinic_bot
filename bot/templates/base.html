@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{ title }} | MARULIDI Admin</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">MARULIDI Admin</div>
+    <nav class="nav">
+      <a href="/">Дашборд</a>
+      <a href="/leads">Лиды</a>
+      <a href="/users">Пользователи</a>
+      <a href="/guides">Гайды</a>
+    </nav>
+    <form method="post" action="/logout">
+      <button class="btn btn-outline" type="submit">Выйти</button>
+    </form>
+  </header>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h1>Гайды (PDF)</h1>
+
+  {% if msg %}
+  <div class="alert alert-ok">{{ msg }}</div>
+  {% endif %}
+  {% if err %}
+  <div class="alert alert-error">{{ err }}</div>
+  {% endif %}
+
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Тип</th>
+        <th>Путь</th>
+        <th>Статус</th>
+        <th>Размер</th>
+        <th>Загрузка</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for guide in guides %}
+      <tr>
+        <td>{{ guide.title }}</td>
+        <td>{{ guide.path_text }}</td>
+        <td>
+          {% if guide.exists %}
+          <span class="tag tag-ok">доступен</span>
+          {% else %}
+          <span class="tag tag-error">не найден</span>
+          {% endif %}
+        </td>
+        <td>{{ guide.size }} байт</td>
+        <td>
+          <form method="post" action="/guides/upload/{{ guide.key }}" enctype="multipart/form-data" class="upload-inline">
+            <input type="file" name="file" accept="application/pdf,.pdf" required>
+            <button class="btn" type="submit">Обновить</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p class="help-text">Допустим только PDF, размер до 20MB.</p>
+</section>
+{% endblock %}

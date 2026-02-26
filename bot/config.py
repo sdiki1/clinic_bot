@@ -20,9 +20,25 @@ class Settings(BaseSettings):
         alias="DATABASE_URL",
     )
 
-    guide_instagram_path: Path | None = Field(default=None, alias="GUIDE_INSTAGRAM_PATH")
-    guide_youtube_path: Path | None = Field(default=None, alias="GUIDE_YOUTUBE_PATH")
-    guide_default_path: Path | None = Field(default=None, alias="GUIDE_DEFAULT_PATH")
+    guide_instagram_path: Path | None = Field(
+        default=Path("./guides/instagram-guide.pdf"),
+        alias="GUIDE_INSTAGRAM_PATH",
+    )
+    guide_youtube_path: Path | None = Field(
+        default=Path("./guides/youtube-guide.pdf"),
+        alias="GUIDE_YOUTUBE_PATH",
+    )
+    guide_default_path: Path | None = Field(
+        default=Path("./guides/universal-guide.pdf"),
+        alias="GUIDE_DEFAULT_PATH",
+    )
+
+    admin_username: str = Field(default="admin", alias="ADMIN_USERNAME")
+    admin_password: str = Field(default="change_me", alias="ADMIN_PASSWORD")
+    admin_secret_key: str = Field(
+        default="change_me_to_long_random_secret",
+        alias="ADMIN_SECRET_KEY",
+    )
 
     phone_hash_salt: str = Field(alias="PHONE_HASH_SALT")
 

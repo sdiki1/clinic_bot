@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="grid cards-2">
+  <article class="card">
+    <h3>Всего пользователей</h3>
+    <p class="metric">{{ users_total }}</p>
+  </article>
+  <article class="card">
+    <h3>Всего лидов</h3>
+    <p class="metric">{{ leads_total }}</p>
+  </article>
+</section>
+
+<section class="grid cards-2 mt-16">
+  <article class="card">
+    <h2>Лиды по источникам</h2>
+    <table class="table">
+      <thead>
+        <tr><th>Источник</th><th>Количество</th></tr>
+      </thead>
+      <tbody>
+        {% for item in leads_by_source %}
+        <tr><td>{{ item.source }}</td><td>{{ item.count }}</td></tr>
+        {% else %}
+        <tr><td colspan="2">Данных пока нет</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+
+  <article class="card">
+    <h2>Последние лиды</h2>
+    <table class="table">
+      <thead>
+        <tr><th>Дата</th><th>Имя</th><th>Телефон</th><th>Источник</th></tr>
+      </thead>
+      <tbody>
+        {% for lead in latest_leads %}
+        <tr>
+          <td>{{ lead.created_at.strftime('%Y-%m-%d %H:%M') if lead.created_at else '—' }}</td>
+          <td>{{ lead.first_name or '—' }}</td>
+          <td>{{ lead.phone_masked }}</td>
+          <td>{{ source_labels.get(lead.source, lead.source) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4">Лидов пока нет</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+</section>
+{% endblock %}

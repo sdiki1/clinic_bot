@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h1>Лиды</h1>
+  <form method="get" action="/leads" class="filters">
+    <label>
+      Источник
+      <select name="source">
+        <option value="">Все</option>
+        {% for src, label in source_labels.items() %}
+        <option value="{{ src }}" {% if selected_source == src %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="btn" type="submit">Применить</button>
+  </form>
+
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Дата</th>
+        <th>Имя</th>
+        <th>Username</th>
+        <th>Telegram ID</th>
+        <th>Телефон</th>
+        <th>Источник</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for lead in leads %}
+      <tr>
+        <td>{{ lead.created_at.strftime('%Y-%m-%d %H:%M') if lead.created_at else '—' }}</td>
+        <td>{{ lead.first_name or '—' }}</td>
+        <td>{{ '@' + lead.username if lead.username else '—' }}</td>
+        <td>{{ lead.telegram_id }}</td>
+        <td>{{ lead.phone_masked }}</td>
+        <td>{{ source_labels.get(lead.source, lead.source) }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">Лидов пока нет</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
