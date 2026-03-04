@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="card">
-  <h1>Стартовые документы (PDF)</h1>
+  <h1>Стартовые документы (PDF, до {{ max_docs }} файлов)</h1>
 
   {% if msg %}
   <div class="alert alert-ok">{{ msg }}</div>
@@ -10,40 +10,45 @@
   <div class="alert alert-error">{{ err }}</div>
   {% endif %}
 
+  <form method="post" action="/documents/upload" enctype="multipart/form-data" class="form-stack">
+    <label>
+      Загрузка файлов
+      <input type="file" name="files" accept="application/pdf,.pdf" multiple required>
+    </label>
+    <div>
+      <button class="btn" type="submit">Загрузить</button>
+    </div>
+  </form>
+
   <table class="table">
     <thead>
       <tr>
-        <th>Тип</th>
+        <th>Файл</th>
         <th>Путь</th>
-        <th>Статус</th>
         <th>Размер</th>
-        <th>Загрузка</th>
+        <th>Действие</th>
       </tr>
     </thead>
     <tbody>
       {% for document in documents %}
       <tr>
-        <td>{{ document.title }}</td>
+        <td>{{ document.filename }}</td>
         <td>{{ document.path_text }}</td>
-        <td>
-          {% if document.exists %}
-          <span class="tag tag-ok">доступен</span>
-          {% else %}
-          <span class="tag tag-error">не найден</span>
-          {% endif %}
-        </td>
         <td>{{ document.size }} байт</td>
         <td>
-          <form method="post" action="/documents/upload/{{ document.key }}" enctype="multipart/form-data" class="upload-inline">
-            <input type="file" name="file" accept="application/pdf,.pdf" required>
-            <button class="btn" type="submit">Обновить</button>
+          <form method="post" action="/documents/delete/{{ document.filename }}" class="upload-inline">
+            <button class="btn btn-outline" type="submit">Удалить</button>
           </form>
         </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="4">Файлы пока не загружены</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 
-  <p class="help-text">Эти файлы бот отправляет пользователю перед кнопкой «Далее». Допустим только PDF, размер до 20MB.</p>
+  <p class="help-text">Бот отправляет эти файлы перед кнопкой «Далее». Допустим только PDF, размер каждого файла до 20MB.</p>
 </section>
 {% endblock %}

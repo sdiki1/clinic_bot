@@ -41,6 +41,10 @@ class Settings(BaseSettings):
         default=Path("./guides/privacy-policy.pdf"),
         alias="START_PRIVACY_PATH",
     )
+    start_documents_dir: Path = Field(
+        default=Path("./guides/start-documents"),
+        alias="START_DOCUMENTS_DIR",
+    )
 
     admin_username: str = Field(default="admin", alias="ADMIN_USERNAME")
     admin_password: str = Field(default="change_me", alias="ADMIN_PASSWORD")

@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from bot.admin_app import _check_credentials, _document_definitions, _is_pdf
+from bot.admin_app import _check_credentials, _is_pdf, _list_start_documents, _sanitize_document_filename
 
 
 def test_is_pdf_true() -> None:
@@ -17,9 +17,16 @@ def test_check_credentials() -> None:
     assert not _check_credentials(settings, "admin", "wrong")
 
 
-def test_document_definitions() -> None:
-    settings = SimpleNamespace(start_terms_path="terms.pdf", start_privacy_path="privacy.pdf")
-    docs = _document_definitions(settings)
+def test_sanitize_document_filename() -> None:
+    assert _sanitize_document_filename("../terms") == "terms.pdf"
+    assert _sanitize_document_filename("my-file.PDF") == "my-file.pdf"
 
-    assert docs[0]["key"] == "terms"
-    assert docs[1]["key"] == "privacy"
+
+def test_list_start_documents(tmp_path) -> None:
+    (tmp_path / "b.pdf").write_bytes(b"%PDF-1.7 b")
+    (tmp_path / "a.pdf").write_bytes(b"%PDF-1.7 a")
+    (tmp_path / "note.txt").write_text("ignore")
+    settings = SimpleNamespace(start_documents_dir=tmp_path)
+    docs = _list_start_documents(settings)
+
+    assert [doc.name for doc in docs] == ["a.pdf", "b.pdf"]

@@ -33,6 +33,7 @@ from bot.services import (
     extract_source,
     guide_title,
     resolve_guide_path,
+    resolve_start_document_paths,
     source_label,
 )
 
@@ -47,16 +48,11 @@ EMOJI_TOOTH = premium_emoji_html(PREMIUM_EMOJI_TOOTH_ID, "🦷")
 
 
 async def send_start_documents(message: Message, settings: Settings) -> None:
-    documents = [
-        ("Пользовательское соглашение", settings.start_terms_path),
-        ("Политика конфиденциальности", settings.start_privacy_path),
-    ]
-    for title, path in documents:
-        if path and path.exists():
-            await message.answer_document(
-                document=FSInputFile(path),
-                caption=f"{EMOJI_BOOKS} {title}",
-            )
+    for path in resolve_start_document_paths(settings):
+        await message.answer_document(
+            document=FSInputFile(path),
+            caption=f"{EMOJI_BOOKS} {path.stem}",
+        )
 
 
 async def send_links_menu(message: Message, settings: Settings) -> None:

@@ -59,3 +59,26 @@ def resolve_guide_path(settings: Settings, source: str | None) -> Path | None:
             return candidate
 
     return None
+
+
+def resolve_start_document_paths(settings: Settings, *, max_files: int = 7) -> list[Path]:
+    docs_dir = settings.start_documents_dir
+    files_from_dir: list[Path] = []
+    if docs_dir.exists() and docs_dir.is_dir():
+        files_from_dir = sorted(
+            [
+                path
+                for path in docs_dir.iterdir()
+                if path.is_file() and path.suffix.lower() == ".pdf"
+            ],
+            key=lambda path: path.name.lower(),
+        )
+
+    if files_from_dir:
+        return files_from_dir[:max_files]
+
+    fallback = [
+        settings.start_terms_path,
+        settings.start_privacy_path,
+    ]
+    return [path for path in fallback if path and path.exists()][:max_files]
