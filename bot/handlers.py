@@ -50,8 +50,7 @@ EMOJI_TOOTH = premium_emoji_html(PREMIUM_EMOJI_TOOTH_ID, "🦷")
 async def send_start_documents(message: Message, settings: Settings) -> None:
     for path in resolve_start_document_paths(settings):
         await message.answer_document(
-            document=FSInputFile(path),
-            caption=f"{EMOJI_BOOKS} {path.stem}",
+            document=FSInputFile(path)
         )
 
 
