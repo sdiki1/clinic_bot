@@ -109,14 +109,22 @@ label {
   color: var(--muted);
 }
 
-input,
-select {
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
   width: 100%;
   margin-top: 4px;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 8px 10px;
   font-size: 14px;
+  font-family: inherit;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  width: auto;
+  margin-right: 6px;
 }
 
 .btn {

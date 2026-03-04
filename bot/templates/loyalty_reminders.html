@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h1>Напоминания для перехода в систему лояльности</h1>
+  <p class="help-text">Схема отправки: через 24 часа, потом через 5 дней, потом через 7 дней и далее каждые 7 дней, пока пользователь не нажмет кнопку перехода в loyalty-бот.</p>
+
+  {% if msg %}
+  <div class="alert alert-ok">{{ msg }}</div>
+  {% endif %}
+  {% if err %}
+  <div class="alert alert-error">{{ err }}</div>
+  {% endif %}
+
+  <form method="post" action="/loyalty-reminders" class="form-stack">
+    <label>
+      <input type="checkbox" name="enabled" {% if config.enabled %}checked{% endif %}>
+      Включить отложенные сообщения
+    </label>
+
+    <label>
+      Текст сообщения через 24 часа
+      <textarea name="message_24h" rows="4" required>{{ config.message_24h }}</textarea>
+    </label>
+
+    <label>
+      Текст сообщения через 5 дней
+      <textarea name="message_5d" rows="4" required>{{ config.message_5d }}</textarea>
+    </label>
+
+    <label>
+      Текст сообщения через 7 дней и далее
+      <textarea name="message_7d" rows="4" required>{{ config.message_7d }}</textarea>
+    </label>
+
+    <div>
+      <button class="btn" type="submit">Сохранить</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

@@ -33,6 +33,15 @@ class Settings(BaseSettings):
         alias="GUIDE_DEFAULT_PATH",
     )
 
+    start_terms_path: Path | None = Field(
+        default=Path("./guides/terms.pdf"),
+        alias="START_TERMS_PATH",
+    )
+    start_privacy_path: Path | None = Field(
+        default=Path("./guides/privacy-policy.pdf"),
+        alias="START_PRIVACY_PATH",
+    )
+
     admin_username: str = Field(default="admin", alias="ADMIN_USERNAME")
     admin_password: str = Field(default="change_me", alias="ADMIN_PASSWORD")
     admin_secret_key: str = Field(
@@ -41,6 +50,8 @@ class Settings(BaseSettings):
     )
 
     phone_hash_salt: str = Field(alias="PHONE_HASH_SALT")
+    loyalty_reminder_poll_seconds: int = Field(default=60, alias="LOYALTY_REMINDER_POLL_SECONDS")
+    loyalty_reminder_batch_size: int = Field(default=50, alias="LOYALTY_REMINDER_BATCH_SIZE")
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -60,6 +71,20 @@ class Settings(BaseSettings):
         if len(cleaned) < 8:
             raise ValueError("PHONE_HASH_SALT must be at least 8 characters")
         return cleaned
+
+    @field_validator("loyalty_reminder_poll_seconds")
+    @classmethod
+    def validate_loyalty_reminder_poll_seconds(cls, value: int) -> int:
+        if value < 15:
+            raise ValueError("LOYALTY_REMINDER_POLL_SECONDS must be at least 15")
+        return value
+
+    @field_validator("loyalty_reminder_batch_size")
+    @classmethod
+    def validate_loyalty_reminder_batch_size(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("LOYALTY_REMINDER_BATCH_SIZE must be at least 1")
+        return value
 
 
 @lru_cache(maxsize=1)

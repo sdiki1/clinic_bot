@@ -27,7 +27,37 @@ def phone_request_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
-def actions_inline_keyboard(site_url: str, loyalty_url: str) -> InlineKeyboardMarkup:
+def start_consent_keyboard(source: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Далее",
+                    callback_data=f"start_continue:{source}",
+                    style="primary",
+                    icon_custom_emoji_id=PREMIUM_EMOJI_TOOTH_ID,
+                )
+            ]
+        ]
+    )
+
+
+def loyalty_url_keyboard(loyalty_url: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Перейти в бонусную систему",
+                    url=loyalty_url,
+                    style="success",
+                    icon_custom_emoji_id=PREMIUM_EMOJI_GIFT_ID,
+                )
+            ]
+        ]
+    )
+
+
+def actions_inline_keyboard(site_url: str, _loyalty_url: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -41,7 +71,7 @@ def actions_inline_keyboard(site_url: str, loyalty_url: str) -> InlineKeyboardMa
             [
                 InlineKeyboardButton(
                     text="Мой бонусный счет",
-                    url=loyalty_url,
+                    callback_data="open_loyalty",
                     style="success",
                     icon_custom_emoji_id=PREMIUM_EMOJI_GIFT_ID,
                 )

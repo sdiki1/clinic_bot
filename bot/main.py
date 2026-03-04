@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import suppress
 from pathlib import Path
 
 from aiogram import Bot, Dispatcher
@@ -12,6 +13,7 @@ from sqlalchemy.engine import make_url
 from bot.config import get_settings
 from bot.database import create_engine_and_session, init_db
 from bot.handlers import router
+from bot.loyalty_reminders import run_loyalty_reminder_loop
 from bot.middlewares import DbSessionMiddleware
 
 
@@ -41,9 +43,14 @@ async def run_bot() -> None:
     dp.update.middleware(DbSessionMiddleware(session_pool))
     dp["settings"] = settings
 
+    reminder_task = asyncio.create_task(run_loyalty_reminder_loop(bot, session_pool, settings))
+
     try:
         await dp.start_polling(bot)
     finally:
+        reminder_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await reminder_task
         await bot.session.close()
         await engine.dispose()
 

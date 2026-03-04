@@ -18,7 +18,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from bot.config import Settings, get_settings
 from bot.constants import SOURCE_LABELS
 from bot.database import create_engine_and_session, init_db
-from bot.models import Lead, User
+from bot.loyalty_reminders import get_or_create_reminder_config
+from bot.models import Lead, LoyaltyReminderConfig, User
 
 MAX_GUIDE_SIZE_BYTES = 20 * 1024 * 1024
 
@@ -57,6 +58,21 @@ def _guide_definitions(settings: Settings) -> list[dict[str, Any]]:
             "key": "default",
             "title": "Универсальный Гайд",
             "path": settings.guide_default_path,
+        },
+    ]
+
+
+def _document_definitions(settings: Settings) -> list[dict[str, Any]]:
+    return [
+        {
+            "key": "terms",
+            "title": "Пользовательское соглашение",
+            "path": settings.start_terms_path,
+        },
+        {
+            "key": "privacy",
+            "title": "Политика конфиденциальности",
+            "path": settings.start_privacy_path,
         },
     ]
 
@@ -262,6 +278,72 @@ async def guides_page(
     )
 
 
+@app.get("/documents", response_class=HTMLResponse)
+async def documents_page(
+    request: Request,
+    msg: str | None = None,
+    err: str | None = None,
+) -> HTMLResponse:
+    unauthorized = _ensure_auth(request)
+    if unauthorized:
+        return unauthorized
+
+    settings: Settings = request.app.state.settings
+
+    documents = []
+    for item in _document_definitions(settings):
+        path: Path | None = item["path"]
+        exists = bool(path and path.exists())
+        size = path.stat().st_size if exists else 0
+        documents.append(
+            {
+                **item,
+                "exists": exists,
+                "size": size,
+                "path_text": str(path) if path else "не настроен",
+            }
+        )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="documents.html",
+        context={
+            "title": "Документы",
+            "documents": documents,
+            "msg": msg,
+            "err": err,
+        },
+    )
+
+
+@app.get("/loyalty-reminders", response_class=HTMLResponse)
+async def loyalty_reminders_page(
+    request: Request,
+    msg: str | None = None,
+    err: str | None = None,
+    session: AsyncSession = Depends(get_session),
+) -> HTMLResponse:
+    unauthorized = _ensure_auth(request)
+    if unauthorized:
+        return unauthorized
+
+    config = await session.get(LoyaltyReminderConfig, 1)
+    if config is None:
+        config = await get_or_create_reminder_config(session)
+        await session.commit()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="loyalty_reminders.html",
+        context={
+            "title": "Loyalty Напоминания",
+            "config": config,
+            "msg": msg,
+            "err": err,
+        },
+    )
+
+
 @app.post("/guides/upload/{guide_key}")
 async def upload_guide(
     request: Request,
@@ -297,6 +379,79 @@ async def upload_guide(
 
     return RedirectResponse(
         url=f"/guides?msg={quote_plus('Файл успешно обновлен')}",
+        status_code=303,
+    )
+
+
+@app.post("/documents/upload/{document_key}")
+async def upload_document(
+    request: Request,
+    document_key: str,
+    file: UploadFile = File(...),
+) -> RedirectResponse:
+    unauthorized = _ensure_auth(request)
+    if unauthorized:
+        return unauthorized
+
+    settings: Settings = request.app.state.settings
+
+    target_map = {
+        "terms": settings.start_terms_path,
+        "privacy": settings.start_privacy_path,
+    }
+
+    target_path = target_map.get(document_key)
+    if target_path is None:
+        return RedirectResponse(
+            url=f"/documents?err={quote_plus('Неизвестный тип документа')}",
+            status_code=303,
+        )
+
+    try:
+        await _save_guide_file(file, target_path)
+    except HTTPException as exc:
+        return RedirectResponse(
+            url=f"/documents?err={quote_plus(str(exc.detail))}",
+            status_code=303,
+        )
+
+    return RedirectResponse(
+        url=f"/documents?msg={quote_plus('Файл успешно обновлен')}",
+        status_code=303,
+    )
+
+
+@app.post("/loyalty-reminders")
+async def save_loyalty_reminders(
+    request: Request,
+    enabled: str | None = Form(default=None),
+    message_24h: str = Form(...),
+    message_5d: str = Form(...),
+    message_7d: str = Form(...),
+    session: AsyncSession = Depends(get_session),
+) -> RedirectResponse:
+    unauthorized = _ensure_auth(request)
+    if unauthorized:
+        return unauthorized
+
+    msg_24h = message_24h.strip()
+    msg_5d = message_5d.strip()
+    msg_7d = message_7d.strip()
+    if not msg_24h or not msg_5d or not msg_7d:
+        return RedirectResponse(
+            url=f"/loyalty-reminders?err={quote_plus('Все три текста обязательны')}",
+            status_code=303,
+        )
+
+    config = await get_or_create_reminder_config(session)
+    config.enabled = enabled is not None
+    config.message_24h = msg_24h
+    config.message_5d = msg_5d
+    config.message_7d = msg_7d
+    await session.commit()
+
+    return RedirectResponse(
+        url=f"/loyalty-reminders?msg={quote_plus('Настройки сохранены')}",
         status_code=303,
     )
 
