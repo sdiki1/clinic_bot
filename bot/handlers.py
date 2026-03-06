@@ -229,7 +229,7 @@ async def on_start(
 
     await send_start_documents(message, settings)
     await message.answer(
-        "Нажимая на кнопку далее, вы соглашаетесь с документами",
+        "Нажимая кнопку «Далее», Вы соглашаетесь с:\n• Политикой обработки персональных данных\n• Получением информационно-рекламных сообщений",
         reply_markup=start_consent_keyboard(source),
     )
 
