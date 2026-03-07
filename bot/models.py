@@ -25,6 +25,7 @@ class User(Base):
     phone_masked: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     source: Mapped[str] = mapped_column(String(32), nullable=False, default=SOURCE_UNKNOWN)
+    new_user_notification_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     loyalty_opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     loyalty_reminder_sent_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     loyalty_reminder_next_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

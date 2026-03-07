@@ -26,6 +26,7 @@ from bot.keyboards import (
     start_consent_keyboard,
 )
 from bot.loyalty_reminders import ensure_loyalty_reminder_schedule, mark_loyalty_opened
+from bot.models import User
 from bot.phone_utils import hash_phone, mask_phone, normalize_phone
 from bot.repository import create_lead, get_user_by_telegram_id, set_user_phone, upsert_user
 from bot.services import (
@@ -126,20 +127,27 @@ async def notify_manager(
         logger.exception("Failed to notify manager chat %s", settings.manager_chat_id)
 
 
-async def notify_new_user(
-    bot: Bot,
+def format_new_user_notification_text(
     *,
+    registered_at: datetime | None,
     first_name: str | None,
     username: str | None,
     telegram_id: int,
     phone: str | None,
     source: str,
-) -> None:
-    registered_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+) -> str:
+    if registered_at is None:
+        normalized_registered_at = datetime.now(timezone.utc)
+    elif registered_at.tzinfo is None:
+        normalized_registered_at = registered_at.replace(tzinfo=timezone.utc)
+    else:
+        normalized_registered_at = registered_at.astimezone(timezone.utc)
+
+    registered_at_text = normalized_registered_at.strftime("%Y-%m-%d %H:%M:%S UTC")
     username_line = f"@{username}" if username else "—"
-    text = (
+    return (
         "Новый пользователь:\n"
-        f"Дата: {registered_at}\n"
+        f"Дата: {registered_at_text}\n"
         f"Имя: {first_name or '—'}\n"
         f"User: {username_line}\n"
         f"Id: {telegram_id}\n"
@@ -147,13 +155,99 @@ async def notify_new_user(
         f"Источник: {source_label(source)}"
     )
 
+
+async def notify_new_user(
+    bot: Bot,
+    *,
+    registered_at: datetime | None,
+    first_name: str | None,
+    username: str | None,
+    telegram_id: int,
+    phone: str | None,
+    source: str,
+) -> int | None:
+    text = format_new_user_notification_text(
+        registered_at=registered_at,
+        first_name=first_name,
+        username=username,
+        telegram_id=telegram_id,
+        phone=phone,
+        source=source,
+    )
+
     try:
-        await bot.send_message(chat_id=NEW_USER_NOTIFICATION_CHAT_ID, text=text)
+        sent_message = await bot.send_message(chat_id=NEW_USER_NOTIFICATION_CHAT_ID, text=text)
+        return sent_message.message_id
     except Exception:
         logger.exception(
             "Failed to notify new user chat %s",
             NEW_USER_NOTIFICATION_CHAT_ID,
         )
+        return None
+
+
+async def edit_new_user_notification_phone(
+    bot: Bot,
+    *,
+    notification_message_id: int | None,
+    registered_at: datetime | None,
+    first_name: str | None,
+    username: str | None,
+    telegram_id: int,
+    phone: str,
+    source: str,
+) -> None:
+    if notification_message_id is None:
+        return
+
+    text = format_new_user_notification_text(
+        registered_at=registered_at,
+        first_name=first_name,
+        username=username,
+        telegram_id=telegram_id,
+        phone=phone,
+        source=source,
+    )
+
+    try:
+        await bot.edit_message_text(
+            chat_id=NEW_USER_NOTIFICATION_CHAT_ID,
+            message_id=notification_message_id,
+            text=text,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to edit new user notification message %s in chat %s",
+            notification_message_id,
+            NEW_USER_NOTIFICATION_CHAT_ID,
+        )
+
+
+async def send_new_user_notification_if_needed(
+    session: AsyncSession,
+    bot: Bot,
+    *,
+    user: User,
+    is_new_user: bool,
+    phone: str | None = None,
+) -> None:
+    if not is_new_user:
+        return
+
+    notification_message_id = await notify_new_user(
+        bot,
+        registered_at=user.reg_date,
+        first_name=user.first_name,
+        username=user.username,
+        telegram_id=user.telegram_id,
+        phone=phone or user.phone_masked,
+        source=user.source or SOURCE_UNKNOWN,
+    )
+    if notification_message_id is None:
+        return
+
+    user.new_user_notification_message_id = notification_message_id
+    await session.commit()
 
 
 async def process_phone_submission(
@@ -195,12 +289,22 @@ async def process_phone_submission(
     )
     await session.commit()
     if is_new_user:
-        await notify_new_user(
+        await send_new_user_notification_if_needed(
+            session,
             message.bot,
+            user=user,
+            is_new_user=is_new_user,
+            phone=normalized_phone,
+        )
+    else:
+        await edit_new_user_notification_phone(
+            message.bot,
+            notification_message_id=user.new_user_notification_message_id,
+            registered_at=user.reg_date,
             first_name=user.first_name,
             username=user.username,
             telegram_id=user.telegram_id,
-            phone=phone_masked,
+            phone=normalized_phone,
             source=user.source or SOURCE_UNKNOWN,
         )
 
@@ -233,15 +337,12 @@ async def continue_start_flow(
     if user.phone_hash:
         ensure_loyalty_reminder_schedule(user)
     await session.commit()
-    if is_new_user:
-        await notify_new_user(
-            message.bot,
-            first_name=user.first_name,
-            username=user.username,
-            telegram_id=user.telegram_id,
-            phone=user.phone_masked,
-            source=user.source or SOURCE_UNKNOWN,
-        )
+    await send_new_user_notification_if_needed(
+        session,
+        message.bot,
+        user=user,
+        is_new_user=is_new_user,
+    )
 
     if user.phone_hash:
         await message.answer(f"{EMOJI_GREETING} Вы уже зарегистрированы.", reply_markup=ReplyKeyboardRemove())
@@ -270,15 +371,12 @@ async def on_start(
     if user.phone_hash:
         ensure_loyalty_reminder_schedule(user)
     await session.commit()
-    if is_new_user:
-        await notify_new_user(
-            message.bot,
-            first_name=user.first_name,
-            username=user.username,
-            telegram_id=user.telegram_id,
-            phone=user.phone_masked,
-            source=user.source or SOURCE_UNKNOWN,
-        )
+    await send_new_user_notification_if_needed(
+        session,
+        message.bot,
+        user=user,
+        is_new_user=is_new_user,
+    )
 
     if user.phone_hash:
         await message.answer(f"{EMOJI_GREETING} Вы уже зарегистрированы.", reply_markup=ReplyKeyboardRemove())

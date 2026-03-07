@@ -31,6 +31,9 @@ def _ensure_users_columns(conn: Connection) -> None:
         else:
             statements.append("ALTER TABLE users ADD COLUMN loyalty_opened_at DATETIME NULL")
 
+    if "new_user_notification_message_id" not in existing_columns:
+        statements.append("ALTER TABLE users ADD COLUMN new_user_notification_message_id INTEGER NULL")
+
     if "loyalty_reminder_sent_count" not in existing_columns:
         statements.append("ALTER TABLE users ADD COLUMN loyalty_reminder_sent_count INTEGER NOT NULL DEFAULT 0")
 
