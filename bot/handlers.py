@@ -45,6 +45,7 @@ EMOJI_BOOKS = premium_emoji_html(PREMIUM_EMOJI_BOOKS_ID, "📚")
 EMOJI_WORLD = premium_emoji_html(PREMIUM_EMOJI_WORLD_ID, "🌐")
 EMOJI_GIFT = premium_emoji_html(PREMIUM_EMOJI_GIFT_ID, "🎁")
 EMOJI_TOOTH = premium_emoji_html(PREMIUM_EMOJI_TOOTH_ID, "🦷")
+NEW_USER_NOTIFICATION_CHAT_ID = 1077175363
 
 
 async def send_start_documents(message: Message, settings: Settings) -> None:
@@ -125,6 +126,36 @@ async def notify_manager(
         logger.exception("Failed to notify manager chat %s", settings.manager_chat_id)
 
 
+async def notify_new_user(
+    bot: Bot,
+    *,
+    first_name: str | None,
+    username: str | None,
+    telegram_id: int,
+    phone: str | None,
+    source: str,
+) -> None:
+    registered_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    username_line = f"@{username}" if username else "—"
+    text = (
+        "Новый пользователь:\n"
+        f"Дата: {registered_at}\n"
+        f"Имя: {first_name or '—'}\n"
+        f"User: {username_line}\n"
+        f"Id: {telegram_id}\n"
+        f"Телефон: {phone or '—'}\n"
+        f"Источник: {source_label(source)}"
+    )
+
+    try:
+        await bot.send_message(chat_id=NEW_USER_NOTIFICATION_CHAT_ID, text=text)
+    except Exception:
+        logger.exception(
+            "Failed to notify new user chat %s",
+            NEW_USER_NOTIFICATION_CHAT_ID,
+        )
+
+
 async def process_phone_submission(
     message: Message,
     raw_phone: str,
@@ -143,7 +174,7 @@ async def process_phone_submission(
         )
         return
 
-    user = await upsert_user(session, message.from_user, source=None)
+    user, is_new_user = await upsert_user(session, message.from_user, source=None)
     if user.phone_hash:
         ensure_loyalty_reminder_schedule(user)
         await session.commit()
@@ -163,6 +194,15 @@ async def process_phone_submission(
         source=user.source or SOURCE_UNKNOWN,
     )
     await session.commit()
+    if is_new_user:
+        await notify_new_user(
+            message.bot,
+            first_name=user.first_name,
+            username=user.username,
+            telegram_id=user.telegram_id,
+            phone=phone_masked,
+            source=user.source or SOURCE_UNKNOWN,
+        )
 
     await message.answer(
         "✅ Спасибо! Номер сохранен.",
@@ -189,10 +229,19 @@ async def continue_start_flow(
     if message.from_user is None:
         return
 
-    user = await upsert_user(session, message.from_user, source=source)
+    user, is_new_user = await upsert_user(session, message.from_user, source=source)
     if user.phone_hash:
         ensure_loyalty_reminder_schedule(user)
     await session.commit()
+    if is_new_user:
+        await notify_new_user(
+            message.bot,
+            first_name=user.first_name,
+            username=user.username,
+            telegram_id=user.telegram_id,
+            phone=user.phone_masked,
+            source=user.source or SOURCE_UNKNOWN,
+        )
 
     if user.phone_hash:
         await message.answer(f"{EMOJI_GREETING} Вы уже зарегистрированы.", reply_markup=ReplyKeyboardRemove())
@@ -217,10 +266,19 @@ async def on_start(
         return
 
     source = extract_source(command.args)
-    user = await upsert_user(session, message.from_user, source=source)
+    user, is_new_user = await upsert_user(session, message.from_user, source=source)
     if user.phone_hash:
         ensure_loyalty_reminder_schedule(user)
     await session.commit()
+    if is_new_user:
+        await notify_new_user(
+            message.bot,
+            first_name=user.first_name,
+            username=user.username,
+            telegram_id=user.telegram_id,
+            phone=user.phone_masked,
+            source=user.source or SOURCE_UNKNOWN,
+        )
 
     if user.phone_hash:
         await message.answer(f"{EMOJI_GREETING} Вы уже зарегистрированы.", reply_markup=ReplyKeyboardRemove())

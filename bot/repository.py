@@ -17,7 +17,7 @@ async def upsert_user(
     session: AsyncSession,
     tg_user: TgUser,
     source: str | None,
-) -> User:
+) -> tuple[User, bool]:
     user = await get_user_by_telegram_id(session, tg_user.id)
     normalized_source = source or SOURCE_UNKNOWN
 
@@ -30,14 +30,14 @@ async def upsert_user(
         )
         session.add(user)
         await session.flush()
-        return user
+        return user, True
 
     user.username = tg_user.username
     user.first_name = tg_user.first_name
     if normalized_source != SOURCE_UNKNOWN:
         user.source = normalized_source
 
-    return user
+    return user, False
 
 
 def set_user_phone(user: User, phone_hash: str, phone_masked: str) -> None:
