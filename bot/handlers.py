@@ -297,9 +297,8 @@ async def process_phone_submission(
             phone=normalized_phone,
         )
     else:
-        await edit_new_user_notification_phone(
+        await notify_new_user(
             message.bot,
-            notification_message_id=user.new_user_notification_message_id,
             registered_at=user.reg_date,
             first_name=user.first_name,
             username=user.username,
