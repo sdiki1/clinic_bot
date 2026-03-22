@@ -9,6 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     bot_token: str = Field(alias="BOT_TOKEN")
+    bot_username: str = Field(default="", alias="BOT_USERNAME")
     manager_chat_id: int = Field(alias="MANAGER_CHAT_ID")
 
     clinic_site_url: str = Field(alias="CLINIC_SITE_URL")
@@ -45,6 +46,10 @@ class Settings(BaseSettings):
         default=Path("./guides/start-documents"),
         alias="START_DOCUMENTS_DIR",
     )
+    guide_links_dir: Path = Field(
+        default=Path("./guides/links"),
+        alias="GUIDE_LINKS_DIR",
+    )
 
     admin_username: str = Field(default="admin", alias="ADMIN_USERNAME")
     admin_password: str = Field(default="change_me", alias="ADMIN_PASSWORD")
@@ -66,6 +71,11 @@ class Settings(BaseSettings):
     @field_validator("loyalty_bot_username")
     @classmethod
     def normalize_bot_username(cls, value: str) -> str:
+        return value.strip().lstrip("@")
+
+    @field_validator("bot_username")
+    @classmethod
+    def normalize_main_bot_username(cls, value: str) -> str:
         return value.strip().lstrip("@")
 
     @field_validator("phone_hash_salt")

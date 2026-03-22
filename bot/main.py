@@ -15,6 +15,7 @@ from bot.database import create_engine_and_session, init_db
 from bot.handlers import router
 from bot.loyalty_reminders import run_loyalty_reminder_loop
 from bot.middlewares import DbSessionMiddleware
+from bot.services import ensure_default_guide_links
 
 
 def ensure_sqlite_dir(database_url: str) -> None:
@@ -32,6 +33,9 @@ async def run_bot() -> None:
 
     engine, session_pool = create_engine_and_session(settings.database_url)
     await init_db(engine)
+    async with session_pool() as session:
+        if await ensure_default_guide_links(session, settings):
+            await session.commit()
 
     bot = Bot(
         token=settings.bot_token,

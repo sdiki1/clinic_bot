@@ -4,7 +4,6 @@ import hmac
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
 from urllib.parse import quote_plus
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -16,10 +15,18 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from starlette.middleware.sessions import SessionMiddleware
 
 from bot.config import Settings, get_settings
-from bot.constants import SOURCE_LABELS
+from bot.constants import SOURCE_LABELS, SOURCE_UNKNOWN
 from bot.database import create_engine_and_session, init_db
 from bot.loyalty_reminders import get_or_create_reminder_config
-from bot.models import Lead, LoyaltyReminderConfig, User
+from bot.models import GuideLink, Lead, LoyaltyReminderConfig, User
+from bot.services import (
+    build_start_deep_link,
+    default_guide_message,
+    ensure_default_guide_links,
+    guide_pdf_storage_path,
+    normalize_public_url,
+    normalize_source_key,
+)
 
 MAX_GUIDE_SIZE_BYTES = 20 * 1024 * 1024
 MAX_START_DOCUMENTS = 7
@@ -41,26 +48,6 @@ def _ensure_sqlite_parent(database_url: str) -> None:
 
 def _is_pdf(filename: str, content: bytes) -> bool:
     return filename.lower().endswith(".pdf") and content.startswith(b"%PDF")
-
-
-def _guide_definitions(settings: Settings) -> list[dict[str, Any]]:
-    return [
-        {
-            "key": "instagram",
-            "title": "Instagram Гайд",
-            "path": settings.guide_instagram_path,
-        },
-        {
-            "key": "youtube",
-            "title": "YouTube Гайд",
-            "path": settings.guide_youtube_path,
-        },
-        {
-            "key": "default",
-            "title": "Универсальный Гайд",
-            "path": settings.guide_default_path,
-        },
-    ]
 
 
 def _sanitize_document_filename(filename: str) -> str:
@@ -86,6 +73,43 @@ def _list_start_documents(settings: Settings) -> list[Path]:
         ],
         key=lambda path: path.name.lower(),
     )
+
+
+def _resolve_link_pdf_path(settings: Settings, guide_link: GuideLink) -> Path:
+    raw_path = (guide_link.pdf_path or "").strip()
+    if raw_path:
+        return Path(raw_path)
+    return guide_pdf_storage_path(settings, guide_link.source)
+
+
+def _guide_link_view(settings: Settings, guide_link: GuideLink) -> dict[str, str | int | bool]:
+    path = _resolve_link_pdf_path(settings, guide_link)
+    exists = path.exists()
+    return {
+        "source": guide_link.source,
+        "name": guide_link.name,
+        "message_text": guide_link.message_text,
+        "button_text": guide_link.button_text,
+        "button_url": guide_link.button_url,
+        "deep_link": build_start_deep_link(settings, guide_link.source),
+        "exists": exists,
+        "size": path.stat().st_size if exists else 0,
+        "path_text": str(path),
+    }
+
+
+async def _source_labels_map(session: AsyncSession) -> dict[str, str]:
+    source_labels = dict(SOURCE_LABELS)
+    rows = (await session.execute(select(GuideLink.source, GuideLink.name))).all()
+    for source, name in rows:
+        source_labels[source] = name
+
+    lead_sources = (await session.execute(select(Lead.source).distinct())).all()
+    user_sources = (await session.execute(select(User.source).distinct())).all()
+    for (source,) in [*lead_sources, *user_sources]:
+        if source and source not in source_labels:
+            source_labels[source] = source
+    return source_labels
 
 
 def _ensure_auth(request: Request) -> RedirectResponse | None:
@@ -123,6 +147,9 @@ async def lifespan(app: FastAPI):
 
     engine, session_pool = create_engine_and_session(settings.database_url)
     await init_db(engine)
+    async with session_pool() as session:
+        if await ensure_default_guide_links(session, settings):
+            await session.commit()
 
     app.state.settings = settings
     app.state.engine = engine
@@ -174,10 +201,11 @@ async def dashboard(
             select(Lead.source, func.count(Lead.id)).group_by(Lead.source).order_by(func.count(Lead.id).desc())
         )
     ).all()
+    source_labels = await _source_labels_map(session)
 
     leads_by_source = [
         {
-            "source": SOURCE_LABELS.get(source, source or "Не определен"),
+            "source": source_labels.get(source, source or "Не определен"),
             "count": count,
         }
         for source, count in leads_by_source_rows
@@ -192,7 +220,7 @@ async def dashboard(
             "leads_total": leads_total or 0,
             "latest_leads": latest_leads,
             "leads_by_source": leads_by_source,
-            "source_labels": SOURCE_LABELS,
+            "source_labels": source_labels,
         },
     )
 
@@ -211,6 +239,7 @@ async def users_page(
     if source:
         stmt = stmt.where(User.source == source)
     users = (await session.scalars(stmt.limit(200))).all()
+    source_labels = await _source_labels_map(session)
 
     return templates.TemplateResponse(
         request=request,
@@ -219,7 +248,7 @@ async def users_page(
             "title": "Пользователи",
             "users": users,
             "selected_source": source or "",
-            "source_labels": SOURCE_LABELS,
+            "source_labels": source_labels,
         },
     )
 
@@ -238,6 +267,7 @@ async def leads_page(
     if source:
         stmt = stmt.where(Lead.source == source)
     leads = (await session.scalars(stmt.limit(200))).all()
+    source_labels = await _source_labels_map(session)
 
     return templates.TemplateResponse(
         request=request,
@@ -246,7 +276,7 @@ async def leads_page(
             "title": "Лиды",
             "leads": leads,
             "selected_source": source or "",
-            "source_labels": SOURCE_LABELS,
+            "source_labels": source_labels,
         },
     )
 
@@ -256,26 +286,17 @@ async def guides_page(
     request: Request,
     msg: str | None = None,
     err: str | None = None,
+    session: AsyncSession = Depends(get_session),
 ) -> HTMLResponse:
     unauthorized = _ensure_auth(request)
     if unauthorized:
         return unauthorized
 
     settings: Settings = request.app.state.settings
-
-    guides = []
-    for item in _guide_definitions(settings):
-        path: Path | None = item["path"]
-        exists = bool(path and path.exists())
-        size = path.stat().st_size if exists else 0
-        guides.append(
-            {
-                **item,
-                "exists": exists,
-                "size": size,
-                "path_text": str(path) if path else "не настроен",
-            }
-        )
+    guide_links = (
+        await session.scalars(select(GuideLink).order_by(GuideLink.created_at.asc(), GuideLink.id.asc()))
+    ).all()
+    guides = [_guide_link_view(settings, row) for row in guide_links]
 
     return templates.TemplateResponse(
         request=request,
@@ -283,6 +304,7 @@ async def guides_page(
         context={
             "title": "Гайды",
             "guides": guides,
+            "bot_username": settings.bot_username,
             "msg": msg,
             "err": err,
         },
@@ -350,30 +372,177 @@ async def loyalty_reminders_page(
     )
 
 
-@app.post("/guides/upload/{guide_key}")
-async def upload_guide(
+@app.post("/guides/create")
+async def create_guide_link(
     request: Request,
-    guide_key: str,
-    file: UploadFile = File(...),
+    source: str = Form(...),
+    name: str = Form(...),
+    message_text: str = Form(...),
+    button_text: str = Form(...),
+    button_url: str = Form(...),
+    session: AsyncSession = Depends(get_session),
 ) -> RedirectResponse:
     unauthorized = _ensure_auth(request)
     if unauthorized:
         return unauthorized
 
     settings: Settings = request.app.state.settings
-
-    target_map = {
-        "instagram": settings.guide_instagram_path,
-        "youtube": settings.guide_youtube_path,
-        "default": settings.guide_default_path,
-    }
-
-    target_path = target_map.get(guide_key)
-    if target_path is None:
+    source_key = normalize_source_key(source)
+    if source_key is None:
         return RedirectResponse(
-            url=f"/guides?err={quote_plus('Неизвестный тип гайда')}",
+            url=f"/guides?err={quote_plus('Ключ ссылки должен быть в формате a-z, 0-9, _, - (до 64 символов)')}",
             status_code=303,
         )
+    if source_key == SOURCE_UNKNOWN:
+        return RedirectResponse(
+            url=f"/guides?err={quote_plus('Ключ unknown зарезервирован')}",
+            status_code=303,
+        )
+
+    existing = await session.scalar(select(GuideLink).where(GuideLink.source == source_key))
+    if existing is not None:
+        return RedirectResponse(
+            url=f"/guides?err={quote_plus('Ссылка с таким ключом уже существует')}",
+            status_code=303,
+        )
+
+    name_value = name.strip()
+    if not name_value:
+        return RedirectResponse(url=f"/guides?err={quote_plus('Название обязательно')}", status_code=303)
+    if len(name_value) > 128:
+        return RedirectResponse(url=f"/guides?err={quote_plus('Название слишком длинное (макс. 128)')}", status_code=303)
+
+    message_value = message_text.strip() or default_guide_message(name_value)
+    if len(message_value) > 1024:
+        return RedirectResponse(
+            url=f"/guides?err={quote_plus('Сообщение должно быть до 1024 символов')}",
+            status_code=303,
+        )
+
+    button_text_value = button_text.strip() or "Перейти на сайт"
+    if len(button_text_value) > 96:
+        return RedirectResponse(
+            url=f"/guides?err={quote_plus('Текст кнопки слишком длинный (макс. 96)')}",
+            status_code=303,
+        )
+
+    button_url_value = normalize_public_url(button_url)
+    if button_url_value is None:
+        return RedirectResponse(
+            url=f"/guides?err={quote_plus('URL кнопки должен начинаться с http:// или https://')}",
+            status_code=303,
+        )
+
+    session.add(
+        GuideLink(
+            source=source_key,
+            name=name_value,
+            message_text=message_value,
+            button_text=button_text_value,
+            button_url=button_url_value,
+            pdf_path=str(guide_pdf_storage_path(settings, source_key)),
+        )
+    )
+    await session.commit()
+    return RedirectResponse(
+        url=f"/guides?msg={quote_plus('Ссылка создана')}",
+        status_code=303,
+    )
+
+
+@app.post("/guides/update/{source}")
+async def update_guide_link(
+    request: Request,
+    source: str,
+    name: str = Form(...),
+    message_text: str = Form(...),
+    button_text: str = Form(...),
+    button_url: str = Form(...),
+    session: AsyncSession = Depends(get_session),
+) -> RedirectResponse:
+    unauthorized = _ensure_auth(request)
+    if unauthorized:
+        return unauthorized
+
+    source_key = normalize_source_key(source)
+    if source_key is None:
+        return RedirectResponse(
+            url=f"/guides?err={quote_plus('Некорректный ключ ссылки')}",
+            status_code=303,
+        )
+
+    guide_link = await session.scalar(select(GuideLink).where(GuideLink.source == source_key))
+    if guide_link is None:
+        return RedirectResponse(
+            url=f"/guides?err={quote_plus('Ссылка не найдена')}",
+            status_code=303,
+        )
+
+    name_value = name.strip()
+    if not name_value:
+        return RedirectResponse(url=f"/guides?err={quote_plus('Название обязательно')}", status_code=303)
+    if len(name_value) > 128:
+        return RedirectResponse(url=f"/guides?err={quote_plus('Название слишком длинное (макс. 128)')}", status_code=303)
+
+    message_value = message_text.strip() or default_guide_message(name_value)
+    if len(message_value) > 1024:
+        return RedirectResponse(
+            url=f"/guides?err={quote_plus('Сообщение должно быть до 1024 символов')}",
+            status_code=303,
+        )
+
+    button_text_value = button_text.strip() or "Перейти на сайт"
+    if len(button_text_value) > 96:
+        return RedirectResponse(
+            url=f"/guides?err={quote_plus('Текст кнопки слишком длинный (макс. 96)')}",
+            status_code=303,
+        )
+
+    button_url_value = normalize_public_url(button_url)
+    if button_url_value is None:
+        return RedirectResponse(
+            url=f"/guides?err={quote_plus('URL кнопки должен начинаться с http:// или https://')}",
+            status_code=303,
+        )
+
+    guide_link.name = name_value
+    guide_link.message_text = message_value
+    guide_link.button_text = button_text_value
+    guide_link.button_url = button_url_value
+    await session.commit()
+    return RedirectResponse(
+        url=f"/guides?msg={quote_plus('Настройки ссылки сохранены')}",
+        status_code=303,
+    )
+
+
+@app.post("/guides/upload/{source}")
+async def upload_guide(
+    request: Request,
+    source: str,
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_session),
+) -> RedirectResponse:
+    unauthorized = _ensure_auth(request)
+    if unauthorized:
+        return unauthorized
+
+    settings: Settings = request.app.state.settings
+    source_key = normalize_source_key(source)
+    if source_key is None:
+        return RedirectResponse(
+            url=f"/guides?err={quote_plus('Некорректный ключ ссылки')}",
+            status_code=303,
+        )
+
+    guide_link = await session.scalar(select(GuideLink).where(GuideLink.source == source_key))
+    if guide_link is None:
+        return RedirectResponse(
+            url=f"/guides?err={quote_plus('Ссылка не найдена')}",
+            status_code=303,
+        )
+
+    target_path = _resolve_link_pdf_path(settings, guide_link)
 
     try:
         await _save_guide_file(file, target_path)
@@ -383,6 +552,8 @@ async def upload_guide(
             status_code=303,
         )
 
+    guide_link.pdf_path = str(target_path)
+    await session.commit()
     return RedirectResponse(
         url=f"/guides?msg={quote_plus('Файл успешно обновлен')}",
         status_code=303,

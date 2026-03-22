@@ -54,6 +54,25 @@ class Lead(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
 
 
+class GuideLink(Base):
+    __tablename__ = "guide_links"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    message_text: Mapped[str] = mapped_column(Text, nullable=False)
+    button_text: Mapped[str] = mapped_column(String(96), nullable=False, default="Перейти на сайт")
+    button_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    pdf_path: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utcnow,
+        onupdate=utcnow,
+    )
+
+
 class LoyaltyReminderConfig(Base):
     __tablename__ = "loyalty_reminder_config"
 

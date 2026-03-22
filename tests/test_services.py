@@ -1,5 +1,7 @@
+from types import SimpleNamespace
+
 from bot.constants import SOURCE_UNKNOWN, premium_emoji_html
-from bot.services import extract_source, resolve_start_document_paths
+from bot.services import build_start_deep_link, extract_source, resolve_start_document_paths
 
 
 def test_extract_source_known() -> None:
@@ -7,13 +9,22 @@ def test_extract_source_known() -> None:
     assert extract_source("YouTube") == "youtube"
 
 
+def test_extract_source_custom() -> None:
+    assert extract_source("telegram_ads") == "telegram_ads"
+
+
 def test_extract_source_unknown() -> None:
-    assert extract_source("telegram_ads") == SOURCE_UNKNOWN
+    assert extract_source("telegram ads") == SOURCE_UNKNOWN
     assert extract_source(None) == SOURCE_UNKNOWN
 
 
 def test_premium_emoji_html() -> None:
     assert premium_emoji_html("123", "🙂") == '<tg-emoji emoji-id="123">🙂</tg-emoji>'
+
+
+def test_build_start_deep_link() -> None:
+    settings = SimpleNamespace(bot_username="MARULIDI_GUIDEE_bot")
+    assert build_start_deep_link(settings, "yandex") == "https://t.me/MARULIDI_GUIDEE_bot?start=yandex"
 
 
 def test_resolve_start_document_paths(tmp_path) -> None:

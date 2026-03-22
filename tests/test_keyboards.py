@@ -3,11 +3,12 @@ from bot.keyboards import actions_inline_keyboard, loyalty_url_keyboard, phone_r
 
 
 def test_actions_inline_keyboard_styles_and_icons() -> None:
-    kb = actions_inline_keyboard("https://example.com", "https://t.me/bonus_bot")
+    kb = actions_inline_keyboard("https://example.com", "https://t.me/bonus_bot", "Записаться на консультацию")
 
     site_btn = kb.inline_keyboard[0][0]
     loyalty_btn = kb.inline_keyboard[1][0]
 
+    assert site_btn.text == "Записаться на консультацию"
     assert site_btn.style == "primary"
     assert site_btn.icon_custom_emoji_id == PREMIUM_EMOJI_WORLD_ID
 

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="card">
-  <h1>Гайды (PDF)</h1>
+  <h1>Ссылки и PDF-гайды</h1>
 
   {% if msg %}
   <div class="alert alert-ok">{{ msg }}</div>
@@ -9,21 +9,56 @@
   {% if err %}
   <div class="alert alert-error">{{ err }}</div>
   {% endif %}
+  {% if not bot_username %}
+  <div class="alert alert-error">Не задан BOT_USERNAME. Deep-link отображается как `?start=...`.</div>
+  {% endif %}
+
+  <h2>Создать новую ссылку</h2>
+  <form method="post" action="/guides/create" class="form-stack">
+    <label>
+      Ключ ссылки (`start`)
+      <input type="text" name="source" placeholder="yandex" required>
+    </label>
+    <label>
+      Название
+      <input type="text" name="name" placeholder="Yandex Гайд" required>
+    </label>
+    <label>
+      Сообщение с PDF (до 1024 символов)
+      <textarea name="message_text" rows="3" placeholder="📚 Yandex Гайд: ..."></textarea>
+    </label>
+    <label>
+      Текст синей кнопки
+      <input type="text" name="button_text" value="Перейти на сайт" required>
+    </label>
+    <label>
+      URL синей кнопки
+      <input type="url" name="button_url" placeholder="https://example.com" required>
+    </label>
+    <button class="btn" type="submit">Создать ссылку</button>
+  </form>
+
+  <h2 class="mt-16">Текущие ссылки</h2>
 
   <table class="table">
     <thead>
       <tr>
-        <th>Тип</th>
+        <th>Ссылка</th>
+        <th>Deep-link</th>
         <th>Путь</th>
         <th>Статус</th>
         <th>Размер</th>
-        <th>Загрузка</th>
+        <th>Настройки</th>
       </tr>
     </thead>
     <tbody>
       {% for guide in guides %}
       <tr>
-        <td>{{ guide.title }}</td>
+        <td>
+          <strong>{{ guide.name }}</strong><br>
+          <span class="help-text">start={{ guide.source }}</span>
+        </td>
+        <td>{{ guide.deep_link }}</td>
         <td>{{ guide.path_text }}</td>
         <td>
           {% if guide.exists %}
@@ -34,16 +69,37 @@
         </td>
         <td>{{ guide.size }} байт</td>
         <td>
-          <form method="post" action="/guides/upload/{{ guide.key }}" enctype="multipart/form-data" class="upload-inline">
+          <form method="post" action="/guides/update/{{ guide.source }}" class="form-stack">
+            <label>
+              Название
+              <input type="text" name="name" value="{{ guide.name }}" required>
+            </label>
+            <label>
+              Сообщение с PDF
+              <textarea name="message_text" rows="4" required>{{ guide.message_text }}</textarea>
+            </label>
+            <label>
+              Текст синей кнопки
+              <input type="text" name="button_text" value="{{ guide.button_text }}" required>
+            </label>
+            <label>
+              URL синей кнопки
+              <input type="url" name="button_url" value="{{ guide.button_url }}" required>
+            </label>
+            <button class="btn" type="submit">Сохранить</button>
+          </form>
+          <form method="post" action="/guides/upload/{{ guide.source }}" enctype="multipart/form-data" class="upload-inline mt-16">
             <input type="file" name="file" accept="application/pdf,.pdf" required>
-            <button class="btn" type="submit">Обновить</button>
+            <button class="btn" type="submit">Заменить PDF</button>
           </form>
         </td>
       </tr>
+      {% else %}
+      <tr><td colspan="6">Ссылок пока нет</td></tr>
       {% endfor %}
     </tbody>
   </table>
 
-  <p class="help-text">Допустим только PDF, размер до 20MB.</p>
+  <p class="help-text">Допустим только PDF, размер до 20MB. Ключ ссылки: `a-z`, `0-9`, `_`, `-`.</p>
 </section>
 {% endblock %}

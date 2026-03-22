@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from bot.config import Settings
 from bot.keyboards import actions_inline_keyboard
 from bot.models import LoyaltyReminderConfig, User, utcnow
-from bot.services import build_loyalty_url
+from bot.services import build_loyalty_url, resolve_guide_delivery_config
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +122,12 @@ async def process_loyalty_reminders(bot: Bot, session: AsyncSession, settings: S
             continue
 
         loyalty_url = build_loyalty_url(settings, user.telegram_id)
-        keyboard = actions_inline_keyboard(settings.clinic_site_url, loyalty_url)
+        guide_config = await resolve_guide_delivery_config(session, settings, user.source)
+        keyboard = actions_inline_keyboard(
+            guide_config.button_url,
+            loyalty_url,
+            site_button_text=guide_config.button_text,
+        )
 
         try:
             await bot.send_message(

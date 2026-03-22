@@ -57,12 +57,12 @@ def loyalty_url_keyboard(loyalty_url: str) -> InlineKeyboardMarkup:
     )
 
 
-def actions_inline_keyboard(site_url: str, _loyalty_url: str) -> InlineKeyboardMarkup:
+def actions_inline_keyboard(site_url: str, _loyalty_url: str, site_button_text: str = "Перейти на сайт") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Перейти на сайт",
+                    text=site_button_text,
                     url=site_url,
                     style="primary",
                     icon_custom_emoji_id=PREMIUM_EMOJI_WORLD_ID,
