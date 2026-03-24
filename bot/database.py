@@ -53,7 +53,23 @@ def _ensure_users_columns(conn: Connection) -> None:
         conn.execute(text(statement))
 
 
+def _ensure_guide_links_columns(conn: Connection) -> None:
+    inspector = inspect(conn)
+    if "guide_links" not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("guide_links")}
+    statements: list[str] = []
+
+    if "intro_message_text" not in existing_columns:
+        statements.append("ALTER TABLE guide_links ADD COLUMN intro_message_text TEXT NULL")
+
+    for statement in statements:
+        conn.execute(text(statement))
+
+
 async def init_db(engine: AsyncEngine) -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.run_sync(_ensure_users_columns)
+        await conn.run_sync(_ensure_guide_links_columns)

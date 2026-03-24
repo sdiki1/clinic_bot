@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hmac
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from urllib.parse import quote_plus
 
@@ -21,6 +21,7 @@ from bot.loyalty_reminders import get_or_create_reminder_config
 from bot.models import GuideLink, Lead, LoyaltyReminderConfig, User
 from bot.services import (
     build_start_deep_link,
+    default_intro_message,
     default_guide_message,
     ensure_default_guide_links,
     guide_pdf_storage_path,
@@ -82,12 +83,45 @@ def _resolve_link_pdf_path(settings: Settings, guide_link: GuideLink) -> Path:
     return guide_pdf_storage_path(settings, guide_link.source)
 
 
+def _build_uploaded_guide_path(
+    settings: Settings,
+    filename: str,
+    current_path: Path | None = None,
+) -> Path:
+    base_name = _sanitize_document_filename(filename)
+    candidate = settings.guide_links_dir / base_name
+    current_path_resolved = current_path.resolve() if current_path else None
+    if not candidate.exists() or (current_path_resolved and candidate.resolve() == current_path_resolved):
+        return candidate
+
+    stem = candidate.stem
+    suffix = candidate.suffix
+    counter = 1
+    while True:
+        candidate = settings.guide_links_dir / f"{stem}-{counter}{suffix}"
+        if not candidate.exists() or (current_path_resolved and candidate.resolve() == current_path_resolved):
+            return candidate
+        counter += 1
+
+
+def _delete_managed_guide_file(settings: Settings, path: Path) -> None:
+    if not path.exists() or not path.is_file():
+        return
+
+    with suppress(ValueError):
+        path.resolve().relative_to(settings.guide_links_dir.resolve())
+        with suppress(OSError):
+            path.unlink()
+
+
 def _guide_link_view(settings: Settings, guide_link: GuideLink) -> dict[str, str | int | bool]:
     path = _resolve_link_pdf_path(settings, guide_link)
     exists = path.exists()
+    name = guide_link.name.strip()
     return {
         "source": guide_link.source,
-        "name": guide_link.name,
+        "name": name,
+        "intro_message_text": (guide_link.intro_message_text or "").strip() or default_intro_message(name),
         "message_text": guide_link.message_text,
         "button_text": guide_link.button_text,
         "button_url": guide_link.button_url,
@@ -377,6 +411,7 @@ async def create_guide_link(
     request: Request,
     source: str = Form(...),
     name: str = Form(...),
+    intro_message_text: str = Form(""),
     message_text: str = Form(...),
     button_text: str = Form(...),
     button_url: str = Form(...),
@@ -412,6 +447,13 @@ async def create_guide_link(
     if len(name_value) > 128:
         return RedirectResponse(url=f"/guides?err={quote_plus('Название слишком длинное (макс. 128)')}", status_code=303)
 
+    intro_message_value = intro_message_text.strip() or default_intro_message(name_value)
+    if len(intro_message_value) > 2048:
+        return RedirectResponse(
+            url=f"/guides?err={quote_plus('Первое сообщение должно быть до 2048 символов')}",
+            status_code=303,
+        )
+
     message_value = message_text.strip() or default_guide_message(name_value)
     if len(message_value) > 1024:
         return RedirectResponse(
@@ -437,6 +479,7 @@ async def create_guide_link(
         GuideLink(
             source=source_key,
             name=name_value,
+            intro_message_text=intro_message_value,
             message_text=message_value,
             button_text=button_text_value,
             button_url=button_url_value,
@@ -455,6 +498,7 @@ async def update_guide_link(
     request: Request,
     source: str,
     name: str = Form(...),
+    intro_message_text: str = Form(...),
     message_text: str = Form(...),
     button_text: str = Form(...),
     button_url: str = Form(...),
@@ -484,6 +528,13 @@ async def update_guide_link(
     if len(name_value) > 128:
         return RedirectResponse(url=f"/guides?err={quote_plus('Название слишком длинное (макс. 128)')}", status_code=303)
 
+    intro_message_value = intro_message_text.strip() or default_intro_message(name_value)
+    if len(intro_message_value) > 2048:
+        return RedirectResponse(
+            url=f"/guides?err={quote_plus('Первое сообщение должно быть до 2048 символов')}",
+            status_code=303,
+        )
+
     message_value = message_text.strip() or default_guide_message(name_value)
     if len(message_value) > 1024:
         return RedirectResponse(
@@ -506,6 +557,7 @@ async def update_guide_link(
         )
 
     guide_link.name = name_value
+    guide_link.intro_message_text = intro_message_value
     guide_link.message_text = message_value
     guide_link.button_text = button_text_value
     guide_link.button_url = button_url_value
@@ -542,7 +594,12 @@ async def upload_guide(
             status_code=303,
         )
 
-    target_path = _resolve_link_pdf_path(settings, guide_link)
+    previous_path = _resolve_link_pdf_path(settings, guide_link)
+    target_path = _build_uploaded_guide_path(
+        settings,
+        file.filename or f"{source_key}.pdf",
+        current_path=previous_path,
+    )
 
     try:
         await _save_guide_file(file, target_path)
@@ -554,8 +611,48 @@ async def upload_guide(
 
     guide_link.pdf_path = str(target_path)
     await session.commit()
+    if previous_path.resolve() != target_path.resolve():
+        _delete_managed_guide_file(settings, previous_path)
+
     return RedirectResponse(
         url=f"/guides?msg={quote_plus('Файл успешно обновлен')}",
+        status_code=303,
+    )
+
+
+@app.post("/guides/delete/{source}")
+async def delete_guide_link(
+    request: Request,
+    source: str,
+    session: AsyncSession = Depends(get_session),
+) -> RedirectResponse:
+    unauthorized = _ensure_auth(request)
+    if unauthorized:
+        return unauthorized
+
+    settings: Settings = request.app.state.settings
+    source_key = normalize_source_key(source)
+    if source_key is None:
+        return RedirectResponse(
+            url=f"/guides?err={quote_plus('Некорректный ключ ссылки')}",
+            status_code=303,
+        )
+
+    guide_link = await session.scalar(select(GuideLink).where(GuideLink.source == source_key))
+    if guide_link is None:
+        return RedirectResponse(
+            url=f"/guides?err={quote_plus('Ссылка не найдена')}",
+            status_code=303,
+        )
+
+    pdf_path = _resolve_link_pdf_path(settings, guide_link)
+    await session.delete(guide_link)
+    await session.commit()
+
+    _delete_managed_guide_file(settings, pdf_path)
+
+    return RedirectResponse(
+        url=f"/guides?msg={quote_plus('Ссылка удалена')}",
         status_code=303,
     )
 

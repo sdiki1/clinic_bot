@@ -26,6 +26,7 @@ SOURCE_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 class GuideDeliveryConfig:
     source: str
     name: str
+    intro_message_text: str
     message_text: str
     button_text: str
     button_url: str
@@ -47,6 +48,13 @@ def default_guide_message(title: str) -> str:
     return (
         f"📚 {title}\n"
         "Спасибо за заявку! Держите ваш гайд и полезные ссылки ниже."
+    )
+
+
+def default_intro_message(title: str) -> str:
+    return (
+        f"👋 Привет! Я бот клиники MARULIDI.\n"
+        f"📄 Чтобы получить материал «{title}», поделитесь номером телефона."
     )
 
 
@@ -103,52 +111,50 @@ def default_guide_link_definitions(settings: Settings) -> list[dict[str, str | N
         {
             "source": SOURCE_INSTAGRAM,
             "name": "Instagram Гайд",
+            "intro_message_text": default_intro_message("Instagram Гайд"),
             "pdf_path": str(settings.guide_instagram_path) if settings.guide_instagram_path else None,
         },
         {
             "source": SOURCE_YOUTUBE,
             "name": "YouTube Гайд",
+            "intro_message_text": default_intro_message("YouTube Гайд"),
             "pdf_path": str(settings.guide_youtube_path) if settings.guide_youtube_path else None,
         },
         {
             "source": SOURCE_SITE,
             "name": "Универсальный Гайд",
+            "intro_message_text": default_intro_message("Универсальный Гайд"),
             "pdf_path": str(settings.guide_default_path) if settings.guide_default_path else None,
         },
     ]
 
 
 async def ensure_default_guide_links(session: AsyncSession, settings: Settings) -> bool:
-    existing = {
-        row.source: row
-        for row in (await session.scalars(select(GuideLink))).all()
-    }
-    changed = False
+    existing = (await session.scalars(select(GuideLink))).all()
+    if existing:
+        return False
+
     for item in default_guide_link_definitions(settings):
         source = str(item["source"])
-        if source in existing:
-            continue
-
         title = guide_title(source)
         session.add(
             GuideLink(
                 source=source,
                 name=str(item["name"]),
+                intro_message_text=str(item["intro_message_text"]),
                 message_text=default_guide_message(title),
                 button_text="Перейти на сайт",
                 button_url=settings.clinic_site_url,
                 pdf_path=item["pdf_path"],
             )
         )
-        changed = True
-
-    if changed:
-        await session.flush()
-    return changed
+    await session.flush()
+    return True
 
 
 def _guide_link_to_delivery_config(settings: Settings, link: GuideLink) -> GuideDeliveryConfig:
     name = link.name.strip() if link.name else source_label(link.source)
+    intro_message_text = (link.intro_message_text or "").strip() or default_intro_message(name)
     message_text = (link.message_text or "").strip() or default_guide_message(name)
     button_text = (link.button_text or "").strip() or "Перейти на сайт"
     button_url = normalize_public_url(link.button_url) or settings.clinic_site_url
@@ -161,6 +167,7 @@ def _guide_link_to_delivery_config(settings: Settings, link: GuideLink) -> Guide
     return GuideDeliveryConfig(
         source=link.source,
         name=name,
+        intro_message_text=intro_message_text,
         message_text=message_text,
         button_text=button_text,
         button_url=button_url,
@@ -197,6 +204,7 @@ async def resolve_guide_delivery_config(
     return GuideDeliveryConfig(
         source=normalized_source,
         name=title,
+        intro_message_text=default_intro_message(title),
         message_text=default_guide_message(title),
         button_text="Перейти на сайт",
         button_url=settings.clinic_site_url,

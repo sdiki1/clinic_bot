@@ -32,6 +32,7 @@ from bot.repository import create_lead, get_user_by_telegram_id, set_user_phone,
 from bot.services import (
     build_loyalty_url,
     extract_source,
+    normalize_source_key,
     resolve_guide_delivery_config,
     resolve_start_document_paths,
     source_label,
@@ -75,7 +76,7 @@ async def send_links_menu(
         f"{EMOJI_TOOTH} С возвращением!\n"
         f"{EMOJI_WORLD} Можете перейти на сайт клиники или в бонусную систему.\n"
         f"{EMOJI_GIFT} Нажмите «Мой бонусный счет», чтобы получить ссылку на переход.\n"
-        "Если хотите снова получить гайд, используйте команду /guide.",
+        "Если хотите снова получить материал, используйте команду /guide.",
         reply_markup=keyboard,
     )
 
@@ -100,7 +101,7 @@ async def send_guide(
     if guide_config.pdf_path is None:
         await message.answer(
             f"{EMOJI_BOOKS} Спасибо за заявку!\n"
-            "Сейчас гайд временно недоступен, но вы уже можете перейти на сайт или в бонусную систему.",
+            "Сейчас файл временно недоступен, но вы уже можете перейти на сайт или в бонусную систему.",
             reply_markup=keyboard,
         )
         return
@@ -363,12 +364,15 @@ async def continue_start_flow(
 
     if user.phone_hash:
         await message.answer(f"{EMOJI_GREETING} Вы уже зарегистрированы.", reply_markup=ReplyKeyboardRemove())
-        await send_links_menu(message, session, settings, user.source or SOURCE_UNKNOWN)
+        if source != SOURCE_UNKNOWN:
+            await send_guide(message, session, settings, source)
+        else:
+            await send_links_menu(message, session, settings, user.source or SOURCE_UNKNOWN)
         return
 
+    guide_config = await resolve_guide_delivery_config(session, settings, source)
     await message.answer(
-        f"{EMOJI_GREETING} Привет! Я бот клиники MARULIDI.\n"
-        f"{EMOJI_BOOKS} Чтобы получить полезный PDF-гайд, поделитесь номером телефона.",
+        guide_config.intro_message_text,
         reply_markup=phone_request_keyboard(),
     )
 
@@ -383,7 +387,9 @@ async def on_start(
     if message.from_user is None:
         return
 
-    source = extract_source(command.args)
+    start_arg = command.args
+    source = extract_source(start_arg)
+    has_deep_link = normalize_source_key(start_arg) not in {None, SOURCE_UNKNOWN}
     user, is_new_user = await upsert_user(session, message.from_user, source=source)
     if user.phone_hash:
         ensure_loyalty_reminder_schedule(user)
@@ -397,7 +403,10 @@ async def on_start(
 
     if user.phone_hash:
         await message.answer(f"{EMOJI_GREETING} Вы уже зарегистрированы.", reply_markup=ReplyKeyboardRemove())
-        await send_links_menu(message, session, settings, user.source or SOURCE_UNKNOWN)
+        if has_deep_link:
+            await send_guide(message, session, settings, source)
+        else:
+            await send_links_menu(message, session, settings, user.source or SOURCE_UNKNOWN)
         return
 
     await send_start_documents(message, settings)

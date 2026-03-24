@@ -143,6 +143,10 @@ input[type="radio"] {
   color: var(--text);
 }
 
+.btn-danger {
+  background: #d14b4b;
+}
+
 .alert {
   border-radius: 10px;
   padding: 10px 12px;

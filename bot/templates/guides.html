@@ -24,6 +24,10 @@
       <input type="text" name="name" placeholder="Yandex Гайд" required>
     </label>
     <label>
+      Приветственное сообщение (до запроса номера)
+      <textarea name="intro_message_text" rows="3" placeholder="👋 Привет! ..."></textarea>
+    </label>
+    <label>
       Сообщение с PDF (до 1024 символов)
       <textarea name="message_text" rows="3" placeholder="📚 Yandex Гайд: ..."></textarea>
     </label>
@@ -75,6 +79,10 @@
               <input type="text" name="name" value="{{ guide.name }}" required>
             </label>
             <label>
+              Приветственное сообщение
+              <textarea name="intro_message_text" rows="4" required>{{ guide.intro_message_text }}</textarea>
+            </label>
+            <label>
               Сообщение с PDF
               <textarea name="message_text" rows="4" required>{{ guide.message_text }}</textarea>
             </label>
@@ -91,6 +99,9 @@
           <form method="post" action="/guides/upload/{{ guide.source }}" enctype="multipart/form-data" class="upload-inline mt-16">
             <input type="file" name="file" accept="application/pdf,.pdf" required>
             <button class="btn" type="submit">Заменить PDF</button>
+          </form>
+          <form method="post" action="/guides/delete/{{ guide.source }}" class="mt-16" onsubmit="return confirm('Удалить ссылку {{ guide.source }}?');">
+            <button class="btn btn-danger" type="submit">Удалить ссылку</button>
           </form>
         </td>
       </tr>

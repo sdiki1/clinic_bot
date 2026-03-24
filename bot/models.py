@@ -60,6 +60,7 @@ class GuideLink(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     source: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
+    intro_message_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     message_text: Mapped[str] = mapped_column(Text, nullable=False)
     button_text: Mapped[str] = mapped_column(String(96), nullable=False, default="Перейти на сайт")
     button_url: Mapped[str] = mapped_column(String(2048), nullable=False)
