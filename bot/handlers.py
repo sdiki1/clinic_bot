@@ -74,8 +74,8 @@ async def send_links_menu(
     )
     await message.answer(
         f"{EMOJI_TOOTH} С возвращением!\n"
-        f"{EMOJI_WORLD} Можете перейти на сайт клиники или в бонусную систему.\n"
-        f"{EMOJI_GIFT} Нажмите «Мой бонусный счет», чтобы получить ссылку на переход.\n"
+        f"{EMOJI_WORLD} Можете перейти на сайт клиники или в систему лояльности.\n"
+        f"{EMOJI_GIFT} Нажмите «Система лояльности», чтобы получить ссылку на переход.\n"
         "Если хотите снова получить материал, используйте команду /guide.",
         reply_markup=keyboard,
     )
@@ -101,7 +101,7 @@ async def send_guide(
     if guide_config.pdf_path is None:
         await message.answer(
             f"{EMOJI_BOOKS} Спасибо за заявку!\n"
-            "Сейчас файл временно недоступен, но вы уже можете перейти на сайт или в бонусную систему.",
+            "Сейчас файл временно недоступен, но вы уже можете перейти на сайт или в систему лояльности.",
             reply_markup=keyboard,
         )
         return
@@ -455,14 +455,14 @@ async def on_open_loyalty(
         mark_loyalty_opened(user)
         await session.commit()
 
-    await callback.answer("Отправил ссылку на бонусную систему")
+    await callback.answer("Отправил ссылку на систему лояльности")
 
     if not isinstance(callback.message, Message):
         return
 
     loyalty_url = build_loyalty_url(settings, callback.from_user.id)
     await callback.message.answer(
-        f"{EMOJI_GIFT} Перейти в бонусную систему:\n{loyalty_url}",
+        f"{EMOJI_GIFT} Перейти в систему лояльности:\n{loyalty_url}",
         reply_markup=loyalty_url_keyboard(loyalty_url),
     )
 

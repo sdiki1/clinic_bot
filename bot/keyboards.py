@@ -47,7 +47,7 @@ def loyalty_url_keyboard(loyalty_url: str) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Перейти в бонусную систему",
+                    text="Перейти в систему лояльности",
                     url=loyalty_url,
                     style="success",
                     icon_custom_emoji_id=PREMIUM_EMOJI_GIFT_ID,
@@ -70,7 +70,7 @@ def actions_inline_keyboard(site_url: str, _loyalty_url: str, site_button_text: 
             ],
             [
                 InlineKeyboardButton(
-                    text="Мой бонусный счет",
+                    text="Система лояльности",
                     callback_data="open_loyalty",
                     style="success",
                     icon_custom_emoji_id=PREMIUM_EMOJI_GIFT_ID,
