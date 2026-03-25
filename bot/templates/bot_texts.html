@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="card">
-  <h1>Тексты бота</h1>
-  <p class="help-text">Здесь можно изменить все системные сообщения и подписи кнопок, которые использует бот.</p>
+  <h1>{{ heading or "Тексты бота" }}</h1>
+  <p class="help-text">{{ description or "Здесь можно изменить все системные сообщения и подписи кнопок, которые использует бот." }}</p>
 
   {% if msg %}
   <div class="alert alert-ok">{{ msg }}</div>
@@ -11,7 +11,7 @@
   <div class="alert alert-error">{{ err }}</div>
   {% endif %}
 
-  <form method="post" action="/bot-texts" class="form-stack">
+  <form method="post" action="{{ form_action or '/bot-texts' }}" class="form-stack">
     {% for item in items %}
     <label>
       {{ item.title }}

@@ -215,6 +215,16 @@ BOT_TEXT_DEFINITIONS_BY_KEY: dict[str, BotTextDefinition] = {
     definition.key: definition for definition in BOT_TEXT_DEFINITIONS
 }
 
+START_BOT_TEXT_KEYS: tuple[str, ...] = (
+    "consent_message",
+    "already_registered_message",
+    "links_menu_message",
+    "start_continue_button_text",
+    "phone_request_button_text",
+    "phone_request_input_placeholder",
+    "actions_loyalty_button_text",
+)
+
 
 class _SafeTemplateValues(dict[str, object]):
     def __missing__(self, key: str) -> str:
