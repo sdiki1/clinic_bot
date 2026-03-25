@@ -8,6 +8,7 @@ from aiogram import Bot
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from bot.bot_texts import get_bot_text_values
 from bot.config import Settings
 from bot.keyboards import actions_inline_keyboard
 from bot.models import LoyaltyReminderConfig, User, utcnow
@@ -87,6 +88,7 @@ async def bootstrap_loyalty_reminder_schedule(
 
 
 async def process_loyalty_reminders(bot: Bot, session: AsyncSession, settings: Settings) -> int:
+    bot_texts = await get_bot_text_values(session)
     config = await get_or_create_reminder_config(session)
     now = utcnow()
 
@@ -127,6 +129,7 @@ async def process_loyalty_reminders(bot: Bot, session: AsyncSession, settings: S
             guide_config.button_url,
             loyalty_url,
             site_button_text=guide_config.button_text,
+            loyalty_button_text=bot_texts["actions_loyalty_button_text"],
         )
 
         try:

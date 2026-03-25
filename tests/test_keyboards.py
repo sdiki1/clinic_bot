@@ -25,6 +25,14 @@ def test_phone_button_uses_premium_icon() -> None:
     assert btn.request_contact is True
 
 
+def test_phone_keyboard_custom_texts() -> None:
+    kb = phone_request_keyboard("Отправить номер", "Введите номер")
+    btn = kb.keyboard[0][0]
+
+    assert btn.text == "Отправить номер"
+    assert kb.input_field_placeholder == "Введите номер"
+
+
 def test_start_consent_keyboard() -> None:
     kb = start_consent_keyboard("instagram")
     btn = kb.inline_keyboard[0][0]
@@ -42,3 +50,14 @@ def test_loyalty_url_keyboard() -> None:
     assert btn.style == "success"
     assert btn.icon_custom_emoji_id == PREMIUM_EMOJI_GIFT_ID
     assert btn.url == "https://t.me/bonus_bot?start=user_1"
+
+
+def test_actions_keyboard_custom_loyalty_button() -> None:
+    kb = actions_inline_keyboard(
+        "https://example.com",
+        "https://t.me/bonus_bot",
+        site_button_text="Сайт",
+        loyalty_button_text="Бонусы",
+    )
+
+    assert kb.inline_keyboard[1][0].text == "Бонусы"

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h1>Тексты бота</h1>
+  <p class="help-text">Здесь можно изменить все системные сообщения и подписи кнопок, которые использует бот.</p>
+
+  {% if msg %}
+  <div class="alert alert-ok">{{ msg }}</div>
+  {% endif %}
+  {% if err %}
+  <div class="alert alert-error">{{ err }}</div>
+  {% endif %}
+
+  <form method="post" action="/bot-texts" class="form-stack">
+    {% for item in items %}
+    <label>
+      {{ item.title }}
+      {% if item.multiline %}
+      <textarea name="{{ item.key }}" rows="{{ item.rows }}" {% if item.max_length %}maxlength="{{ item.max_length }}"{% endif %}>{{ item.value }}</textarea>
+      {% else %}
+      <input type="text" name="{{ item.key }}" value="{{ item.value }}" {% if item.max_length %}maxlength="{{ item.max_length }}"{% endif %}>
+      {% endif %}
+      <span class="help-text">
+        {{ item.description }}
+        {% if item.max_length %}Лимит: {{ item.max_length }} символов.{% endif %}
+      </span>
+    </label>
+    {% endfor %}
+
+    <div>
+      <button class="btn" type="submit">Сохранить</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

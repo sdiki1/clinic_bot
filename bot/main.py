@@ -15,6 +15,7 @@ from bot.database import create_engine_and_session, init_db
 from bot.handlers import router
 from bot.loyalty_reminders import run_loyalty_reminder_loop
 from bot.middlewares import DbSessionMiddleware
+from bot.bot_texts import ensure_default_bot_texts
 from bot.services import ensure_default_guide_links
 
 
@@ -35,6 +36,8 @@ async def run_bot() -> None:
     await init_db(engine)
     async with session_pool() as session:
         if await ensure_default_guide_links(session, settings):
+            await session.commit()
+        if await ensure_default_bot_texts(session):
             await session.commit()
 
     bot = Bot(

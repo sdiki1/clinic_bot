@@ -14,11 +14,18 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from starlette.middleware.sessions import SessionMiddleware
 
+from bot.bot_texts import (
+    BOT_TEXT_DEFAULTS,
+    BOT_TEXT_DEFINITIONS,
+    BOT_TEXT_DEFINITIONS_BY_KEY,
+    ensure_default_bot_texts,
+    get_bot_text_values,
+)
 from bot.config import Settings, get_settings
 from bot.constants import SOURCE_LABELS, SOURCE_UNKNOWN
 from bot.database import create_engine_and_session, init_db
 from bot.loyalty_reminders import get_or_create_reminder_config
-from bot.models import GuideLink, Lead, LoyaltyReminderConfig, User
+from bot.models import BotText, GuideLink, Lead, LoyaltyReminderConfig, User
 from bot.services import (
     build_start_deep_link,
     default_intro_message,
@@ -132,6 +139,24 @@ def _guide_link_view(settings: Settings, guide_link: GuideLink) -> dict[str, str
     }
 
 
+def _bot_text_items(values: dict[str, str]) -> list[dict[str, str | bool | int | None]]:
+    items: list[dict[str, str | bool | int | None]] = []
+    for definition in BOT_TEXT_DEFINITIONS:
+        item_value = (values.get(definition.key) or "").strip() or definition.default_value
+        items.append(
+            {
+                "key": definition.key,
+                "title": definition.title,
+                "description": definition.description,
+                "value": item_value,
+                "multiline": definition.multiline,
+                "rows": definition.rows,
+                "max_length": definition.max_length,
+            }
+        )
+    return items
+
+
 async def _source_labels_map(session: AsyncSession) -> dict[str, str]:
     source_labels = dict(SOURCE_LABELS)
     rows = (await session.execute(select(GuideLink.source, GuideLink.name))).all()
@@ -183,6 +208,8 @@ async def lifespan(app: FastAPI):
     await init_db(engine)
     async with session_pool() as session:
         if await ensure_default_guide_links(session, settings):
+            await session.commit()
+        if await ensure_default_bot_texts(session):
             await session.commit()
 
     app.state.settings = settings
@@ -403,6 +430,76 @@ async def loyalty_reminders_page(
             "msg": msg,
             "err": err,
         },
+    )
+
+
+@app.get("/bot-texts", response_class=HTMLResponse)
+async def bot_texts_page(
+    request: Request,
+    msg: str | None = None,
+    err: str | None = None,
+    session: AsyncSession = Depends(get_session),
+) -> HTMLResponse:
+    unauthorized = _ensure_auth(request)
+    if unauthorized:
+        return unauthorized
+
+    if await ensure_default_bot_texts(session):
+        await session.commit()
+
+    values = await get_bot_text_values(session)
+    return templates.TemplateResponse(
+        request=request,
+        name="bot_texts.html",
+        context={
+            "title": "Тексты Бота",
+            "items": _bot_text_items(values),
+            "msg": msg,
+            "err": err,
+        },
+    )
+
+
+@app.post("/bot-texts")
+async def save_bot_texts(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> RedirectResponse:
+    unauthorized = _ensure_auth(request)
+    if unauthorized:
+        return unauthorized
+
+    if await ensure_default_bot_texts(session):
+        await session.flush()
+
+    existing_rows = (await session.scalars(select(BotText))).all()
+    existing_by_key = {row.key: row for row in existing_rows}
+    form = await request.form()
+
+    for key, default_value in BOT_TEXT_DEFAULTS.items():
+        definition = BOT_TEXT_DEFINITIONS_BY_KEY[key]
+        raw_value = str(form.get(key, "")).strip()
+        value = raw_value or default_value
+
+        if definition.max_length is not None and len(value) > definition.max_length:
+            error_message = f"Поле «{definition.title}» превышает лимит: {definition.max_length} символов"
+            return RedirectResponse(
+                url=f"/bot-texts?err={quote_plus(error_message)}",
+                status_code=303,
+            )
+
+        row = existing_by_key.get(key)
+        if row is None:
+            row = BotText(key=key, value=value)
+            session.add(row)
+            existing_by_key[key] = row
+            continue
+        row.value = value
+
+    await session.commit()
+    return RedirectResponse(
+        url=f"/bot-texts?msg={quote_plus('Тексты сохранены')}",
+        status_code=303,
     )
 
 

@@ -9,6 +9,7 @@ from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import CallbackQuery, FSInputFile, Message, ReplyKeyboardRemove
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.bot_texts import get_bot_text_values, render_bot_text
 from bot.config import Settings
 from bot.constants import (
     PREMIUM_EMOJI_BOOKS_ID,
@@ -49,6 +50,15 @@ EMOJI_TOOTH = premium_emoji_html(PREMIUM_EMOJI_TOOTH_ID, "🦷")
 NEW_USER_NOTIFICATION_CHAT_ID = 1077175363
 
 
+async def _resolve_bot_texts(
+    session: AsyncSession,
+    current: dict[str, str] | None = None,
+) -> dict[str, str]:
+    if current is not None:
+        return current
+    return await get_bot_text_values(session)
+
+
 async def send_start_documents(message: Message, settings: Settings) -> None:
     for path in resolve_start_document_paths(settings):
         await message.answer_document(
@@ -61,22 +71,28 @@ async def send_links_menu(
     session: AsyncSession,
     settings: Settings,
     source: str,
+    bot_texts: dict[str, str] | None = None,
 ) -> None:
     if message.from_user is None:
         return
 
+    texts = await _resolve_bot_texts(session, bot_texts)
     loyalty_url = build_loyalty_url(settings, message.from_user.id)
     guide_config = await resolve_guide_delivery_config(session, settings, source)
     keyboard = actions_inline_keyboard(
         guide_config.button_url,
         loyalty_url,
         site_button_text=guide_config.button_text,
+        loyalty_button_text=texts["actions_loyalty_button_text"],
+    )
+    links_menu_message = render_bot_text(
+        texts["links_menu_message"],
+        emoji_tooth=EMOJI_TOOTH,
+        emoji_world=EMOJI_WORLD,
+        emoji_gift=EMOJI_GIFT,
     )
     await message.answer(
-        f"{EMOJI_TOOTH} С возвращением!\n"
-        f"{EMOJI_WORLD} Можете перейти на сайт клиники или в систему лояльности.\n"
-        f"{EMOJI_GIFT} Нажмите «Система лояльности», чтобы получить ссылку на переход.\n"
-        "Если хотите снова получить материал, используйте команду /guide.",
+        links_menu_message,
         reply_markup=keyboard,
     )
 
@@ -86,22 +102,24 @@ async def send_guide(
     session: AsyncSession,
     settings: Settings,
     source: str,
+    bot_texts: dict[str, str] | None = None,
 ) -> None:
     if message.from_user is None:
         return
 
+    texts = await _resolve_bot_texts(session, bot_texts)
     guide_config = await resolve_guide_delivery_config(session, settings, source)
     loyalty_url = build_loyalty_url(settings, message.from_user.id)
     keyboard = actions_inline_keyboard(
         guide_config.button_url,
         loyalty_url,
         site_button_text=guide_config.button_text,
+        loyalty_button_text=texts["actions_loyalty_button_text"],
     )
 
     if guide_config.pdf_path is None:
         await message.answer(
-            f"{EMOJI_BOOKS} Спасибо за заявку!\n"
-            "Сейчас файл временно недоступен, но вы уже можете перейти на сайт или в систему лояльности.",
+            render_bot_text(texts["guide_unavailable_message"], emoji_books=EMOJI_BOOKS),
             reply_markup=keyboard,
         )
         return
@@ -122,6 +140,7 @@ async def notify_manager(
     bot: Bot,
     settings: Settings,
     *,
+    template_text: str,
     first_name: str | None,
     username: str | None,
     telegram_id: int,
@@ -130,14 +149,14 @@ async def notify_manager(
 ) -> None:
     lead_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     username_line = f"@{username}" if username else "—"
-    text = (
-        "🚨 Новый лид\n"
-        f"Имя: {first_name or '—'}\n"
-        f"Username: {username_line}\n"
-        f"Telegram ID: {telegram_id}\n"
-        f"Телефон: {phone}\n"
-        f"Источник: {source_label(source)}\n"
-        f"Дата: {lead_time}"
+    text = render_bot_text(
+        template_text,
+        first_name=first_name or "—",
+        username_line=username_line,
+        telegram_id=telegram_id,
+        phone=phone,
+        source=source_label(source),
+        lead_time=lead_time,
     )
 
     try:
@@ -148,6 +167,7 @@ async def notify_manager(
 
 def format_new_user_notification_text(
     *,
+    template_text: str,
     registered_at: datetime | None,
     first_name: str | None,
     username: str | None,
@@ -164,20 +184,21 @@ def format_new_user_notification_text(
 
     registered_at_text = normalized_registered_at.strftime("%Y-%m-%d %H:%M:%S UTC")
     username_line = f"@{username}" if username else "—"
-    return (
-        "Новый пользователь:\n"
-        f"Дата: {registered_at_text}\n"
-        f"Имя: {first_name or '—'}\n"
-        f"User: {username_line}\n"
-        f"Id: {telegram_id}\n"
-        f"Телефон: {phone or '—'}\n"
-        f"Источник: {source_label(source)}"
+    return render_bot_text(
+        template_text,
+        registered_at=registered_at_text,
+        first_name=first_name or "—",
+        username_line=username_line,
+        telegram_id=telegram_id,
+        phone=phone or "—",
+        source=source_label(source),
     )
 
 
 async def notify_new_user(
     bot: Bot,
     *,
+    template_text: str,
     registered_at: datetime | None,
     first_name: str | None,
     username: str | None,
@@ -186,6 +207,7 @@ async def notify_new_user(
     source: str,
 ) -> int | None:
     text = format_new_user_notification_text(
+        template_text=template_text,
         registered_at=registered_at,
         first_name=first_name,
         username=username,
@@ -208,6 +230,7 @@ async def notify_new_user(
 async def edit_new_user_notification_phone(
     bot: Bot,
     *,
+    template_text: str,
     notification_message_id: int | None,
     registered_at: datetime | None,
     first_name: str | None,
@@ -220,6 +243,7 @@ async def edit_new_user_notification_phone(
         return
 
     text = format_new_user_notification_text(
+        template_text=template_text,
         registered_at=registered_at,
         first_name=first_name,
         username=username,
@@ -249,12 +273,15 @@ async def send_new_user_notification_if_needed(
     user: User,
     is_new_user: bool,
     phone: str | None = None,
+    bot_texts: dict[str, str] | None = None,
 ) -> None:
     if not is_new_user:
         return
 
+    texts = await _resolve_bot_texts(session, bot_texts)
     notification_message_id = await notify_new_user(
         bot,
+        template_text=texts["new_user_notification_template"],
         registered_at=user.reg_date,
         first_name=user.first_name,
         username=user.username,
@@ -278,12 +305,15 @@ async def process_phone_submission(
     if message.from_user is None:
         return
 
+    texts = await get_bot_text_values(session)
     normalized_phone = normalize_phone(raw_phone)
     if not normalized_phone:
         await message.answer(
-            "⚠️ Не получилось распознать номер.\n"
-            "Пожалуйста, отправьте номер в формате +79991234567 или минимум 10 цифр.",
-            reply_markup=phone_request_keyboard(),
+            texts["phone_parse_error_message"],
+            reply_markup=phone_request_keyboard(
+                button_text=texts["phone_request_button_text"],
+                input_placeholder=texts["phone_request_input_placeholder"],
+            ),
         )
         return
 
@@ -291,8 +321,14 @@ async def process_phone_submission(
     if user.phone_hash:
         ensure_loyalty_reminder_schedule(user)
         await session.commit()
-        await message.answer("✅ Номер уже сохранен.", reply_markup=ReplyKeyboardRemove())
-        await send_links_menu(message, session, settings, user.source or SOURCE_UNKNOWN)
+        await message.answer(texts["phone_already_saved_message"], reply_markup=ReplyKeyboardRemove())
+        await send_links_menu(
+            message,
+            session,
+            settings,
+            user.source or SOURCE_UNKNOWN,
+            bot_texts=texts,
+        )
         return
 
     phone_hash = hash_phone(normalized_phone, settings.phone_hash_salt)
@@ -314,10 +350,12 @@ async def process_phone_submission(
             user=user,
             is_new_user=is_new_user,
             phone=normalized_phone,
+            bot_texts=texts,
         )
     else:
         await notify_new_user(
             message.bot,
+            template_text=texts["new_user_notification_template"],
             registered_at=user.reg_date,
             first_name=user.first_name,
             username=user.username,
@@ -327,13 +365,20 @@ async def process_phone_submission(
         )
 
     await message.answer(
-        "✅ Спасибо! Номер сохранен.",
+        texts["phone_saved_message"],
         reply_markup=ReplyKeyboardRemove(),
     )
-    await send_guide(message, session, settings, user.source or SOURCE_UNKNOWN)
+    await send_guide(
+        message,
+        session,
+        settings,
+        user.source or SOURCE_UNKNOWN,
+        bot_texts=texts,
+    )
     await notify_manager(
         message.bot,
         settings,
+        template_text=texts["manager_notification_template"],
         first_name=user.first_name,
         username=user.username,
         telegram_id=user.telegram_id,
@@ -351,6 +396,7 @@ async def continue_start_flow(
     if message.from_user is None:
         return
 
+    texts = await get_bot_text_values(session)
     user, is_new_user = await upsert_user(session, message.from_user, source=source)
     if user.phone_hash:
         ensure_loyalty_reminder_schedule(user)
@@ -360,20 +406,33 @@ async def continue_start_flow(
         message.bot,
         user=user,
         is_new_user=is_new_user,
+        bot_texts=texts,
     )
 
     if user.phone_hash:
-        await message.answer(f"{EMOJI_GREETING} Вы уже зарегистрированы.", reply_markup=ReplyKeyboardRemove())
+        await message.answer(
+            render_bot_text(texts["already_registered_message"], emoji_greeting=EMOJI_GREETING),
+            reply_markup=ReplyKeyboardRemove(),
+        )
         if source != SOURCE_UNKNOWN:
-            await send_guide(message, session, settings, source)
+            await send_guide(message, session, settings, source, bot_texts=texts)
         else:
-            await send_links_menu(message, session, settings, user.source or SOURCE_UNKNOWN)
+            await send_links_menu(
+                message,
+                session,
+                settings,
+                user.source or SOURCE_UNKNOWN,
+                bot_texts=texts,
+            )
         return
 
     guide_config = await resolve_guide_delivery_config(session, settings, source)
     await message.answer(
         guide_config.intro_message_text,
-        reply_markup=phone_request_keyboard(),
+        reply_markup=phone_request_keyboard(
+            button_text=texts["phone_request_button_text"],
+            input_placeholder=texts["phone_request_input_placeholder"],
+        ),
     )
 
 
@@ -387,6 +446,7 @@ async def on_start(
     if message.from_user is None:
         return
 
+    texts = await get_bot_text_values(session)
     start_arg = command.args
     source = extract_source(start_arg)
     has_deep_link = normalize_source_key(start_arg) not in {None, SOURCE_UNKNOWN}
@@ -399,20 +459,30 @@ async def on_start(
         message.bot,
         user=user,
         is_new_user=is_new_user,
+        bot_texts=texts,
     )
 
     if user.phone_hash:
-        await message.answer(f"{EMOJI_GREETING} Вы уже зарегистрированы.", reply_markup=ReplyKeyboardRemove())
+        await message.answer(
+            render_bot_text(texts["already_registered_message"], emoji_greeting=EMOJI_GREETING),
+            reply_markup=ReplyKeyboardRemove(),
+        )
         if has_deep_link:
-            await send_guide(message, session, settings, source)
+            await send_guide(message, session, settings, source, bot_texts=texts)
         else:
-            await send_links_menu(message, session, settings, user.source or SOURCE_UNKNOWN)
+            await send_links_menu(
+                message,
+                session,
+                settings,
+                user.source or SOURCE_UNKNOWN,
+                bot_texts=texts,
+            )
         return
 
     await send_start_documents(message, settings)
     await message.answer(
-        "Нажимая кнопку «Далее», Вы соглашаетесь с:\n• Политикой обработки персональных данных\n• Получением информационно-рекламных сообщений",
-        reply_markup=start_consent_keyboard(source),
+        texts["consent_message"],
+        reply_markup=start_consent_keyboard(source, button_text=texts["start_continue_button_text"]),
     )
 
 
@@ -450,20 +520,28 @@ async def on_open_loyalty(
     if callback.from_user is None:
         return
 
+    texts = await get_bot_text_values(session)
     user = await get_user_by_telegram_id(session, callback.from_user.id)
     if user is not None:
         mark_loyalty_opened(user)
         await session.commit()
 
-    await callback.answer("Отправил ссылку на систему лояльности")
+    await callback.answer(texts["loyalty_link_toast"])
 
     if not isinstance(callback.message, Message):
         return
 
     loyalty_url = build_loyalty_url(settings, callback.from_user.id)
     await callback.message.answer(
-        f"{EMOJI_GIFT} Перейти в систему лояльности:\n{loyalty_url}",
-        reply_markup=loyalty_url_keyboard(loyalty_url),
+        render_bot_text(
+            texts["loyalty_link_message"],
+            emoji_gift=EMOJI_GIFT,
+            loyalty_url=loyalty_url,
+        ),
+        reply_markup=loyalty_url_keyboard(
+            loyalty_url,
+            button_text=texts["loyalty_open_button_text"],
+        ),
     )
 
 
@@ -476,17 +554,27 @@ async def on_guide(
     if message.from_user is None:
         return
 
+    texts = await get_bot_text_values(session)
     user = await get_user_by_telegram_id(session, message.from_user.id)
     if user is None or user.phone_hash is None:
         await message.answer(
-            "📞 Сначала поделитесь номером телефона, чтобы получить гайд.",
-            reply_markup=phone_request_keyboard(),
+            texts["guide_requires_phone_message"],
+            reply_markup=phone_request_keyboard(
+                button_text=texts["phone_request_button_text"],
+                input_placeholder=texts["phone_request_input_placeholder"],
+            ),
         )
         return
 
     ensure_loyalty_reminder_schedule(user)
     await session.commit()
-    await send_guide(message, session, settings, user.source or SOURCE_UNKNOWN)
+    await send_guide(
+        message,
+        session,
+        settings,
+        user.source or SOURCE_UNKNOWN,
+        bot_texts=texts,
+    )
 
 
 @router.message(F.contact)
@@ -499,9 +587,13 @@ async def on_contact(
         return
 
     if message.contact.user_id and message.contact.user_id != message.from_user.id:
+        texts = await get_bot_text_values(session)
         await message.answer(
-            "⚠️ Отправьте, пожалуйста, свой номер через кнопку ниже.",
-            reply_markup=phone_request_keyboard(),
+            texts["send_own_phone_message"],
+            reply_markup=phone_request_keyboard(
+                button_text=texts["phone_request_button_text"],
+                input_placeholder=texts["phone_request_input_placeholder"],
+            ),
         )
         return
 
@@ -522,9 +614,16 @@ async def on_text_phone_fallback(
 
     user = await get_user_by_telegram_id(session, message.from_user.id)
     if user and user.phone_hash:
+        texts = await get_bot_text_values(session)
         ensure_loyalty_reminder_schedule(user)
         await session.commit()
-        await send_links_menu(message, session, settings, user.source or SOURCE_UNKNOWN)
+        await send_links_menu(
+            message,
+            session,
+            settings,
+            user.source or SOURCE_UNKNOWN,
+            bot_texts=texts,
+        )
         return
 
     await process_phone_submission(message, message.text, session, settings)
