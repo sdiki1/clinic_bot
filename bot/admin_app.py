@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import hmac
+import logging
 import os
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from urllib.parse import quote_plus
 
+from aiogram import Bot
+from aiogram.types import BufferedInputFile
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -38,7 +41,12 @@ from bot.services import (
 )
 
 MAX_GUIDE_SIZE_BYTES = 20 * 1024 * 1024
+MAX_BROADCAST_PHOTO_SIZE_BYTES = 10 * 1024 * 1024
 MAX_START_DOCUMENTS = 7
+MAX_BROADCAST_TEXT_LENGTH = 4096
+MAX_BROADCAST_CAPTION_LENGTH = 1024
+
+logger = logging.getLogger(__name__)
 
 
 def _ensure_sqlite_parent(database_url: str) -> None:
@@ -57,6 +65,21 @@ def _ensure_sqlite_parent(database_url: str) -> None:
 
 def _is_pdf(filename: str, content: bytes) -> bool:
     return filename.lower().endswith(".pdf") and content.startswith(b"%PDF")
+
+
+def _is_supported_image(filename: str, content_type: str | None, content: bytes) -> bool:
+    normalized_name = (filename or "").lower()
+    allowed_types = {"image/jpeg", "image/png", "image/webp"}
+    if content_type and content_type.lower() not in allowed_types:
+        return False
+
+    if normalized_name.endswith((".jpg", ".jpeg")):
+        return content.startswith(b"\xff\xd8\xff")
+    if normalized_name.endswith(".png"):
+        return content.startswith(b"\x89PNG\r\n\x1a\n")
+    if normalized_name.endswith(".webp"):
+        return content.startswith(b"RIFF") and len(content) >= 12 and content[8:12] == b"WEBP"
+    return False
 
 
 def _sanitize_document_filename(filename: str) -> str:
@@ -341,6 +364,9 @@ async def dashboard(
 async def users_page(
     request: Request,
     source: str | None = None,
+    msg: str | None = None,
+    err: str | None = None,
+    broadcast_source: str | None = None,
     session: AsyncSession = Depends(get_session),
 ) -> HTMLResponse:
     unauthorized = _ensure_auth(request)
@@ -361,6 +387,9 @@ async def users_page(
             "users": users,
             "selected_source": source or "",
             "source_labels": source_labels,
+            "msg": msg,
+            "err": err,
+            "selected_broadcast_source": broadcast_source or "__all__",
         },
     )
 
@@ -390,6 +419,141 @@ async def leads_page(
             "selected_source": source or "",
             "source_labels": source_labels,
         },
+    )
+
+
+@app.post("/users/broadcast")
+async def broadcast_users(
+    request: Request,
+    message: str = Form(""),
+    target_source: str = Form("__all__"),
+    photo: UploadFile | None = File(default=None),
+    session: AsyncSession = Depends(get_session),
+) -> RedirectResponse:
+    unauthorized = _ensure_auth(request)
+    if unauthorized:
+        return unauthorized
+
+    text = message.strip()
+    normalized_target_source = target_source.strip() or "__all__"
+    source_labels = await _source_labels_map(session)
+    if normalized_target_source != "__all__" and normalized_target_source not in source_labels:
+        return RedirectResponse(
+            url=(
+                f"/users?err={quote_plus('Некорректный тег для рассылки')}"
+                f"&broadcast_source={quote_plus(normalized_target_source)}"
+            ),
+            status_code=303,
+        )
+
+    photo_bytes: bytes | None = None
+    photo_filename = "broadcast.jpg"
+    if photo is not None and (photo.filename or "").strip():
+        photo_bytes = await photo.read()
+        if not photo_bytes:
+            return RedirectResponse(
+                url=(
+                    f"/users?err={quote_plus('Файл изображения пустой')}"
+                    f"&broadcast_source={quote_plus(normalized_target_source)}"
+                ),
+                status_code=303,
+            )
+        if len(photo_bytes) > MAX_BROADCAST_PHOTO_SIZE_BYTES:
+            return RedirectResponse(
+                url=(
+                    f"/users?err={quote_plus('Изображение слишком большое (макс. 10MB)')}"
+                    f"&broadcast_source={quote_plus(normalized_target_source)}"
+                ),
+                status_code=303,
+            )
+        if not _is_supported_image(photo.filename or "", photo.content_type, photo_bytes):
+            return RedirectResponse(
+                url=(
+                    f"/users?err={quote_plus('Поддерживаются только JPG, PNG или WEBP')}"
+                    f"&broadcast_source={quote_plus(normalized_target_source)}"
+                ),
+                status_code=303,
+            )
+        photo_filename = Path(photo.filename or "").name or photo_filename
+
+    if not text and photo_bytes is None:
+        return RedirectResponse(
+            url=(
+                f"/users?err={quote_plus('Укажите текст сообщения или прикрепите изображение')}"
+                f"&broadcast_source={quote_plus(normalized_target_source)}"
+            ),
+            status_code=303,
+        )
+
+    if photo_bytes is not None and len(text) > MAX_BROADCAST_CAPTION_LENGTH:
+        return RedirectResponse(
+            url=(
+                f"/users?err={quote_plus('Подпись к изображению должна быть до 1024 символов')}"
+                f"&broadcast_source={quote_plus(normalized_target_source)}"
+            ),
+            status_code=303,
+        )
+
+    if photo_bytes is None and len(text) > MAX_BROADCAST_TEXT_LENGTH:
+        return RedirectResponse(
+            url=(
+                f"/users?err={quote_plus('Текст сообщения должен быть до 4096 символов')}"
+                f"&broadcast_source={quote_plus(normalized_target_source)}"
+            ),
+            status_code=303,
+        )
+
+    stmt = select(User.telegram_id)
+    if normalized_target_source != "__all__":
+        stmt = stmt.where(User.source == normalized_target_source)
+    telegram_ids = (await session.scalars(stmt)).all()
+    if not telegram_ids:
+        return RedirectResponse(
+            url=(
+                f"/users?err={quote_plus('Нет пользователей для выбранного сегмента')}"
+                f"&broadcast_source={quote_plus(normalized_target_source)}"
+            ),
+            status_code=303,
+        )
+
+    settings: Settings = request.app.state.settings
+    bot = Bot(token=settings.bot_token)
+    sent_count = 0
+    failed_count = 0
+    try:
+        for chat_id in telegram_ids:
+            try:
+                if photo_bytes is not None:
+                    await bot.send_photo(
+                        chat_id=chat_id,
+                        photo=BufferedInputFile(photo_bytes, filename=photo_filename),
+                        caption=text or None,
+                        parse_mode=None,
+                    )
+                else:
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=text,
+                        parse_mode=None,
+                    )
+                sent_count += 1
+            except Exception as exc:
+                failed_count += 1
+                logger.warning("Broadcast send failed for user %s: %s", chat_id, exc)
+    finally:
+        await bot.session.close()
+
+    audience_label = (
+        "всем пользователям"
+        if normalized_target_source == "__all__"
+        else f"тегу «{source_labels.get(normalized_target_source, normalized_target_source)}»"
+    )
+    return RedirectResponse(
+        url=(
+            f"/users?msg={quote_plus(f'Рассылка по {audience_label}: отправлено {sent_count}, ошибок {failed_count}')}"
+            f"&broadcast_source={quote_plus(normalized_target_source)}"
+        ),
+        status_code=303,
     )
 
 

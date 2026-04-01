@@ -2,6 +2,40 @@
 {% block content %}
 <section class="card">
   <h1>Пользователи</h1>
+
+  {% if msg %}
+  <div class="alert alert-ok">{{ msg }}</div>
+  {% endif %}
+  {% if err %}
+  <div class="alert alert-error">{{ err }}</div>
+  {% endif %}
+
+  <h2>Рассылка</h2>
+  <form method="post" action="/users/broadcast" enctype="multipart/form-data" class="form-stack" onsubmit="return confirm('Отправить рассылку выбранному сегменту?');">
+    <label>
+      Кому отправить
+      <select name="target_source">
+        <option value="__all__" {% if selected_broadcast_source == "__all__" %}selected{% endif %}>Все пользователи</option>
+        {% for src, label in source_labels.items() %}
+        <option value="{{ src }}" {% if selected_broadcast_source == src %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      Текст сообщения
+      <textarea name="message" rows="4" placeholder="Введите текст рассылки"></textarea>
+    </label>
+    <label>
+      Фото (опционально, JPG/PNG/WEBP до 10MB)
+      <input type="file" name="photo" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp">
+    </label>
+    <div>
+      <button class="btn" type="submit">Отправить рассылку</button>
+    </div>
+  </form>
+  <p class="help-text">Можно отправить только текст, только фото или фото с подписью. При фото подпись должна быть до 1024 символов.</p>
+
+  <h2 class="mt-16">Список пользователей</h2>
   <form method="get" action="/users" class="filters">
     <label>
       Источник

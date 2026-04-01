@@ -5,6 +5,7 @@ from bot.admin_app import (
     _check_credentials,
     _delete_managed_guide_file,
     _is_pdf,
+    _is_supported_image,
     _list_start_documents,
     _sanitize_document_filename,
 )
@@ -16,6 +17,18 @@ def test_is_pdf_true() -> None:
 
 def test_is_pdf_false_extension() -> None:
     assert not _is_pdf("guide.txt", b"%PDF-1.7 content")
+
+
+def test_is_supported_image_jpeg_true() -> None:
+    assert _is_supported_image("photo.jpg", "image/jpeg", b"\xff\xd8\xffsome-data")
+
+
+def test_is_supported_image_false_for_invalid_magic() -> None:
+    assert not _is_supported_image("photo.png", "image/png", b"not-a-png")
+
+
+def test_is_supported_image_false_for_wrong_content_type() -> None:
+    assert not _is_supported_image("photo.jpg", "application/pdf", b"\xff\xd8\xffsome-data")
 
 
 def test_check_credentials() -> None:
