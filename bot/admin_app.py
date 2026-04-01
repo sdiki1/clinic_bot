@@ -69,7 +69,7 @@ def _is_pdf(filename: str, content: bytes) -> bool:
 
 def _is_supported_image(filename: str, content_type: str | None, content: bytes) -> bool:
     normalized_name = (filename or "").lower()
-    allowed_types = {"image/jpeg", "image/png", "image/webp"}
+    allowed_types = {"image/jpeg", "image/jpg", "image/png", "image/webp"}
     if content_type and content_type.lower() not in allowed_types:
         return False
 
